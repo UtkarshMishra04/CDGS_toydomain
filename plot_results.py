@@ -77,6 +77,107 @@ class GaussianPlotter:
         else:
             raise ValueError(f"Unknown gaussian type: {gaussian_params['type']}")
     
+    def _is_within_2std(self, value, gaussian_params, num_stds=3):
+        """
+        Check if a value is within 2 standard deviations of the theoretical distribution.
+        
+        Args:
+            value (float): The value to check
+            gaussian_params (dict): Gaussian parameters for the distribution
+            
+        Returns:
+            bool: True if within 2 standard deviations, False otherwise
+        """
+        if gaussian_params['type'] == 'single_gaussian':
+            mu = gaussian_params['mu']
+            sigma = gaussian_params['sigma']
+            return abs(value - mu) <= num_stds * sigma
+        
+        elif gaussian_params['type'] == 'mixture_gaussian':
+            # For mixture, check if within 2 std of ANY component
+            # This is the correct approach for mixture distributions
+            for component in gaussian_params['components']:
+                mu = component['mu']
+                sigma = component['sigma']
+                if abs(value - mu) <= num_stds * sigma:
+                    return True
+            return False
+        
+        else:
+            return False
+    
+    def _get_closest_mode(self, value, gaussian_params):
+        """
+        Get the closest mode center for a given value.
+        
+        Args:
+            value (float): The value to find closest mode for
+            gaussian_params (dict): Gaussian parameters
+            
+        Returns:
+            float: The center of the closest mode
+        """
+        if gaussian_params['type'] == 'single_gaussian':
+            return gaussian_params['mu']
+        
+        elif gaussian_params['type'] == 'mixture_gaussian':
+            # Find the closest component center
+            closest_mu = None
+            min_distance = float('inf')
+            
+            for component in gaussian_params['components']:
+                distance = abs(value - component['mu'])
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_mu = component['mu']
+            
+            return closest_mu
+        
+        return None
+    
+    def _is_valid_transition(self, start_value, end_value, start_idx, end_idx, num_indices):
+        """
+        Check if a transition between two values follows the allowed transition rules.
+        
+        Args:
+            start_value (float): Starting value
+            end_value (float): Ending value  
+            start_idx (int): Starting index
+            end_idx (int): Ending index
+            num_indices (int): Total number of indices
+            
+        Returns:
+            bool: True if transition is valid according to rules
+        """
+        if 'transitions' not in self.config:
+            return True  # No transition rules defined, allow all
+        
+        # Get the closest modes for start and end values
+        start_params = self.get_gaussian_for_index(start_idx, num_indices)
+        end_params = self.get_gaussian_for_index(end_idx, num_indices)
+        
+        start_mode = self._get_closest_mode(start_value, start_params)
+        end_mode = self._get_closest_mode(end_value, end_params)
+        
+        # Determine transition type
+        if start_idx == 0:
+            transition_type = 'from_start'
+        elif end_idx == num_indices - 1:
+            transition_type = 'to_end'
+        else:
+            transition_type = 'intermediate'
+        
+        # Check if this transition is allowed
+        if transition_type in self.config['transitions']:
+            allowed_transitions = self.config['transitions'][transition_type]['transitions']
+            
+            for allowed in allowed_transitions:
+                if (abs(start_mode - allowed['from']) < 1e-6 and 
+                    abs(end_mode - allowed['to']) < 1e-6):
+                    return True
+        
+        return False
+    
     def _plot_transition_arrows(self, num_indices):
         """
         Plot transition arrows showing valid mode transitions between consecutive indices.
@@ -205,8 +306,39 @@ class GaussianPlotter:
         # Plot connecting lines for a subset of samples if requested
         if show_data and show_connections:
             max_lines = min(50, latents.shape[0] - 1)
+            green_segments = 0
+            red_segments = 0
+            
             for i in range(max_lines):
-                plt.plot(range(num_indices), latents[i], color='gray', alpha=0.1, linewidth=0.5)
+                # Plot each segment individually with appropriate color
+                for j in range(num_indices - 1):
+                    start_value = latents[i, j]
+                    end_value = latents[i, j + 1]
+                    
+                    # Check if both start and end points are within their expected distributions
+                    start_params = self.get_gaussian_for_index(j, num_indices)
+                    end_params = self.get_gaussian_for_index(j + 1, num_indices)
+                    
+                    start_valid = self._is_within_2std(start_value, start_params)
+                    end_valid = self._is_within_2std(end_value, end_params)
+                    
+                    # Check if the transition follows the allowed transition rules
+                    transition_valid = self._is_valid_transition(start_value, end_value, j, j + 1, num_indices)
+                    
+                    # Color segment green only if both endpoints are valid AND transition is allowed
+                    segment_color = 'green' if (start_valid and end_valid and transition_valid) else 'red'
+                    
+                    if start_valid and end_valid and transition_valid:
+                        green_segments += 1
+                    else:
+                        red_segments += 1
+                    
+                    # Plot individual segment
+                    plt.plot([j, j + 1], [start_value, end_value], 
+                            color=segment_color, alpha=0.3, linewidth=1)
+            
+            total_segments = green_segments + red_segments
+            print(f"Connection segments: {green_segments} green, {red_segments} red (out of {total_segments} total)")
         
         # Plot transition arrows if requested
         if show_transitions and 'transitions' in self.config:
