@@ -225,7 +225,8 @@ class GaussianPlotter:
                                 ))
     
     def plot_overlay(self, csv_file, output_dir="results_long", save_plots=True, 
-                     show_data=True, show_connections=True, show_transitions=False):
+                     show_data=True, show_connections=True, show_transitions=False, 
+                     num_trajectories=50):
         """
         Create overlay plot of samples and theoretical distributions.
         
@@ -236,6 +237,7 @@ class GaussianPlotter:
             show_data (bool): Whether to show data scatter points
             show_connections (bool): Whether to show connection lines between points
             show_transitions (bool): Whether to show valid mode transition arrows
+            num_trajectories (int): Number of trajectories to plot (default: 50)
         """
         # Load data
         df = pd.read_csv(csv_file)
@@ -256,10 +258,14 @@ class GaussianPlotter:
         
         # Plot scatter points for generated samples if requested
         if show_data:
+            # Only plot scatter points for the selected trajectories
+            max_trajectories = min(num_trajectories, latents.shape[0])
+            selected_latents = latents[:max_trajectories]
+            
             for i in range(num_indices):
                 plt.scatter(
-                    np.ones_like(latents[:, i]) * i, 
-                    latents[:, i],
+                    np.ones_like(selected_latents[:, i]) * i, 
+                    selected_latents[:, i],
                     label=f'{latent_cols[i]} samples', 
                     alpha=0.5, 
                     s=20
@@ -267,11 +273,17 @@ class GaussianPlotter:
         
         # Plot theoretical Gaussian distributions
         if show_data:
-            y_range = (latents.min() - 0.5, latents.max() + 0.5)
+            # Use y_range based on selected trajectories only
+            max_trajectories = min(num_trajectories, latents.shape[0])
+            selected_latents = latents[:max_trajectories]
+            data_min, data_max = selected_latents.min(), selected_latents.max()
+            print(f"Data range: {data_min:.3f} to {data_max:.3f}")
+            y_range = (selected_latents.min() - 0.5, selected_latents.max() + 0.5)
         else:
             # Use default range from config when not showing data
             y_range = tuple(self.plotting_settings['x_range'])
         y_points = np.linspace(y_range[0], y_range[1], self.plotting_settings['num_points'])
+        print(f"Y-range for plotting: {y_range[0]:.3f} to {y_range[1]:.3f}")
         
         for i in range(num_indices):
             gaussian_params = self.get_gaussian_for_index(i, num_indices)
@@ -305,12 +317,16 @@ class GaussianPlotter:
         
         # Plot connecting lines for a subset of samples if requested
         if show_data and show_connections:
-            max_lines = min(50, latents.shape[0] - 1)
+            max_lines = min(num_trajectories, latents.shape[0])
             green_segments = 0
             red_segments = 0
+            gray_segments = 0
             
             for i in range(max_lines):
-                # Plot each segment individually with appropriate color
+                # First pass: check if this trajectory has any invalid transitions
+                trajectory_has_invalid = False
+                segment_validities = []
+                
                 for j in range(num_indices - 1):
                     start_value = latents[i, j]
                     end_value = latents[i, j + 1]
@@ -325,20 +341,38 @@ class GaussianPlotter:
                     # Check if the transition follows the allowed transition rules
                     transition_valid = self._is_valid_transition(start_value, end_value, j, j + 1, num_indices)
                     
-                    # Color segment green only if both endpoints are valid AND transition is allowed
-                    segment_color = 'green' if (start_valid and end_valid and transition_valid) else 'red'
+                    # Segment is valid only if both endpoints are valid AND transition is allowed
+                    segment_valid = start_valid and end_valid and transition_valid
+                    segment_validities.append(segment_valid)
                     
-                    if start_valid and end_valid and transition_valid:
-                        green_segments += 1
-                    else:
+                    if not segment_valid:
+                        trajectory_has_invalid = True
+                
+                # Second pass: plot segments with appropriate colors
+                for j in range(num_indices - 1):
+                    start_value = latents[i, j]
+                    end_value = latents[i, j + 1]
+                    segment_valid = segment_validities[j]
+                    
+                    if not segment_valid:
+                        # Invalid segments are always red
+                        segment_color = 'red'
                         red_segments += 1
+                    elif trajectory_has_invalid:
+                        # Valid segments in invalid trajectories are gray
+                        segment_color = 'gray'
+                        gray_segments += 1
+                    else:
+                        # Valid segments in completely valid trajectories are green
+                        segment_color = 'green'
+                        green_segments += 1
                     
                     # Plot individual segment
                     plt.plot([j, j + 1], [start_value, end_value], 
-                            color=segment_color, alpha=0.3, linewidth=1)
+                            color=segment_color, alpha=0.6, linewidth=3)
             
-            total_segments = green_segments + red_segments
-            print(f"Connection segments: {green_segments} green, {red_segments} red (out of {total_segments} total)")
+            total_segments = green_segments + red_segments + gray_segments
+            print(f"Connection segments: {green_segments} green, {gray_segments} gray, {red_segments} red (out of {total_segments} total)")
         
         # Plot transition arrows if requested
         if show_transitions and 'transitions' in self.config:
@@ -356,7 +390,6 @@ class GaussianPlotter:
         # plt.title(' '.join(title_parts))
         # plt.xlabel('Index')
         # plt.ylabel('Value')
-        plt.ylim(-1.25, 1.25)
         
         # Set LaTeX-formatted x-axis labels with proper math font
         plt.rcParams['mathtext.fontset'] = 'cm'  # Use Computer Modern math font
@@ -376,7 +409,17 @@ class GaussianPlotter:
         
         # plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
         # plt.grid(True, alpha=0.3)
-        plt.tight_layout()
+        # plt.tight_layout()
+        
+        # Strictly enforce y-limits as the very last step (after tight_layout)
+        current_ylims = ax.get_ylim()
+        print(f"Y-limits before setting: {current_ylims[0]:.3f} to {current_ylims[1]:.3f}")
+        
+        plt.ylim(-1.25, 1.25)
+        ax.set_ylim(-1.25, 1.25)
+        
+        final_ylims = ax.get_ylim()
+        print(f"Y-limits after setting: {final_ylims[0]:.3f} to {final_ylims[1]:.3f}")
         
         if save_plots:
             # Create output directory
@@ -414,6 +457,8 @@ def main():
                         help='Don\'t show connection lines between data points')
     parser.add_argument('--show_transitions', action='store_true',
                         help='Show valid mode transition arrows between consecutive indices')
+    parser.add_argument('--num_trajectories', type=int, default=50,
+                        help='Number of trajectories to plot (default: 50)')
     
     args = parser.parse_args()
     
@@ -449,7 +494,8 @@ def main():
     
     print(f"Generating plot with: {', '.join(plot_description)}...")
     
-    plotter.plot_overlay(args.csv, args.output_dir, save_plots, show_data, show_connections, show_transitions)
+    plotter.plot_overlay(args.csv, args.output_dir, save_plots, show_data, show_connections, 
+                         show_transitions, args.num_trajectories)
     
     print("Plotting completed!")
 

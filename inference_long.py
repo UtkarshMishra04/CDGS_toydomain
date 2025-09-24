@@ -281,7 +281,7 @@ class ToyDomainDiffusion(nn.Module):
         return latent
     
     @torch.no_grad()
-    def gsc_resample_pruning(self, batch_size=100, num_inference_steps=100, num_resampling_steps=10, top_K=0.2, device='cuda'):
+    def gsc_resample_pruning(self, batch_size=100, num_inference_steps=100, num_resampling_steps=10, top_K=1, device='cuda'):
 
         total_sample_dim = self.views[-1][1]
 
@@ -348,7 +348,7 @@ class ToyDomainDiffusion(nn.Module):
         all_noise_prediction = []
 
         # for idx, i in tqdm(enumerate(all_timesteps[:-1]), leave=False, total=len(all_timesteps)-1):
-        for idx, i in tqdm(enumerate(all_timesteps[:-num_timesteps//2+1]), leave=False, total=num_timesteps//2):
+        for idx, i in tqdm(enumerate(all_timesteps[:-int(num_timesteps * (0.95))+1]), leave=False, total=num_timesteps//20):
             t = i
             t_next = all_timesteps[idx + 1]
             alpha_t = self.scheduler.alphas_cumprod[t]

@@ -109,9 +109,9 @@
         "num_points": 1000,
         "pdf_scale_factor": 0.3,
         "colors": {
-            "index_0": "blue",
-            "index_last": "blue",
-            "index_middle": "blue"
+            "index_0": "#3399cc",
+            "index_last": "#3399cc",
+            "index_middle": "#3399cc"
         },
         "alpha": 0.8,
         "linewidth": 2,
