@@ -77,7 +77,54 @@ class GaussianPlotter:
         else:
             raise ValueError(f"Unknown gaussian type: {gaussian_params['type']}")
     
-    def plot_overlay(self, csv_file, output_dir="results_long", save_plots=True):
+    def _plot_transition_arrows(self, num_indices):
+        """
+        Plot transition arrows showing valid mode transitions between consecutive indices.
+        
+        Args:
+            num_indices (int): Total number of indices
+        """
+        transitions = self.config['transitions']
+        arrow_settings = self.plotting_settings['transition_arrows']
+        
+        for i in range(num_indices - 1):
+            # Determine transition type based on position
+            if i == 0:
+                # From start to first intermediate
+                transition_type = 'from_start'
+            elif i == num_indices - 2:
+                # From last intermediate to end
+                transition_type = 'to_end'
+            else:
+                # Between intermediates
+                transition_type = 'intermediate'
+            
+            if transition_type in transitions:
+                transition_data = transitions[transition_type]
+                
+                # Plot arrows for each valid transition
+                for transition in transition_data['transitions']:
+                    source_y = transition['from']
+                    target_y = transition['to']
+                    
+                    # Calculate arrow positions
+                    start_x = i + arrow_settings['offset_x']
+                    end_x = (i + 1) - arrow_settings['offset_x']
+                    
+                    # Draw arrow
+                    plt.annotate('', 
+                                xy=(end_x, target_y), 
+                                xytext=(start_x, source_y),
+                                arrowprops=dict(
+                                    arrowstyle=f'->, head_length={arrow_settings["head_length"]}, head_width={arrow_settings["head_width"]}', 
+                                    color=arrow_settings['color'],
+                                    alpha=arrow_settings['alpha'],
+                                    lw=arrow_settings['width'] * 100,  # Convert to reasonable linewidth
+                                    shrinkA=0, shrinkB=0
+                                ))
+    
+    def plot_overlay(self, csv_file, output_dir="results_long", save_plots=True, 
+                     show_data=True, show_connections=True, show_transitions=False):
         """
         Create overlay plot of samples and theoretical distributions.
         
@@ -85,6 +132,9 @@ class GaussianPlotter:
             csv_file (str): Path to CSV file with latent data
             output_dir (str): Directory to save plots
             save_plots (bool): Whether to save plots to files
+            show_data (bool): Whether to show data scatter points
+            show_connections (bool): Whether to show connection lines between points
+            show_transitions (bool): Whether to show valid mode transition arrows
         """
         # Load data
         df = pd.read_csv(csv_file)
@@ -103,18 +153,23 @@ class GaussianPlotter:
         # Create the plot
         plt.figure(figsize=(12, 8))
         
-        # Plot scatter points for generated samples
-        for i in range(num_indices):
-            plt.scatter(
-                np.ones_like(latents[:, i]) * i, 
-                latents[:, i],
-                label=f'{latent_cols[i]} samples', 
-                alpha=0.5, 
-                s=20
-            )
+        # Plot scatter points for generated samples if requested
+        if show_data:
+            for i in range(num_indices):
+                plt.scatter(
+                    np.ones_like(latents[:, i]) * i, 
+                    latents[:, i],
+                    label=f'{latent_cols[i]} samples', 
+                    alpha=0.5, 
+                    s=20
+                )
         
         # Plot theoretical Gaussian distributions
-        y_range = (latents.min() - 0.5, latents.max() + 0.5)
+        if show_data:
+            y_range = (latents.min() - 0.5, latents.max() + 0.5)
+        else:
+            # Use default range from config when not showing data
+            y_range = tuple(self.plotting_settings['x_range'])
         y_points = np.linspace(y_range[0], y_range[1], self.plotting_settings['num_points'])
         
         for i in range(num_indices):
@@ -147,21 +202,48 @@ class GaussianPlotter:
                 linewidth=1
             )
         
-        # Plot connecting lines for a subset of samples
-        max_lines = min(50, latents.shape[0] - 1)
-        for i in range(max_lines):
-            plt.plot(range(num_indices), latents[i], color='gray', alpha=0.1, linewidth=0.5)
+        # Plot connecting lines for a subset of samples if requested
+        if show_data and show_connections:
+            max_lines = min(50, latents.shape[0] - 1)
+            for i in range(max_lines):
+                plt.plot(range(num_indices), latents[i], color='gray', alpha=0.1, linewidth=0.5)
+        
+        # Plot transition arrows if requested
+        if show_transitions and 'transitions' in self.config:
+            self._plot_transition_arrows(num_indices)
         
         # Format the plot
-        title_parts = [f'Generated samples vs theoretical distributions']
+        if show_data:
+            title_parts = [f'Generated samples vs theoretical distributions']
+        else:
+            title_parts = [f'Theoretical distributions only']
+        
         if metadata:
             title_parts.append(f"({metadata.get('mode', 'unknown')} mode, {metadata.get('steps', 'N/A')} steps)")
         
-        plt.title(' '.join(title_parts))
-        plt.xlabel('Index')
-        plt.ylabel('Value')
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        plt.grid(True, alpha=0.3)
+        # plt.title(' '.join(title_parts))
+        # plt.xlabel('Index')
+        # plt.ylabel('Value')
+        plt.ylim(-1.25, 1.25)
+        
+        # Set LaTeX-formatted x-axis labels with proper math font
+        plt.rcParams['mathtext.fontset'] = 'cm'  # Use Computer Modern math font
+        plt.rcParams['font.family'] = 'serif'    # Use serif font family
+        x_labels = [f'$x_{{{i+1}}}$' for i in range(num_indices)]
+        plt.xticks(range(num_indices), x_labels, fontsize=60)
+        # plt.yticks(fontsize=20)
+        
+        # Remove plot border/spines and tick lines
+        ax = plt.gca()
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+        
+        # Remove tick lines but keep labels
+        ax.tick_params(axis='x', length=0)  # Remove x-axis tick lines
+        ax.tick_params(axis='y', length=0, labelleft=False)  # Remove y-axis tick lines and labels
+        
+        # plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        # plt.grid(True, alpha=0.3)
         plt.tight_layout()
         
         if save_plots:
@@ -170,127 +252,22 @@ class GaussianPlotter:
             
             # Generate filename from CSV file
             csv_name = Path(csv_file).stem
-            output_file = f"{output_dir}/plot_{csv_name}.png"
-            plt.savefig(output_file, dpi=150, bbox_inches='tight')
-            print(f"Overlay plot saved as: {output_file}")
+            suffix = "_theory_only" if not show_data else "_overlay"
+            if show_transitions:
+                suffix += "_transitions"
+            output_file = f"{output_dir}/plot_{csv_name}{suffix}.png"
+            plt.savefig(output_file, dpi=600, bbox_inches='tight', 
+                       facecolor='white', edgecolor='none', 
+                       format='png', transparent=False, 
+                       pad_inches=0.1, metadata={'Creator': 'Matplotlib'})
+            print(f"Plot saved as: {output_file}")
         
         plt.show()
         
-    def plot_separate_gaussians(self, num_indices, output_dir="results_long", save_plots=True):
-        """
-        Create separate plots for each Gaussian distribution.
-        
-        Args:
-            num_indices (int): Number of indices to plot
-            output_dir (str): Directory to save plots
-            save_plots (bool): Whether to save plots to files
-        """
-        x_range = self.plotting_settings['x_range']
-        x_points = np.linspace(x_range[0], x_range[1], self.plotting_settings['num_points'])
-        
-        # Create subplot grid
-        cols = min(4, num_indices)
-        rows = (num_indices + cols - 1) // cols
-        fig, axes = plt.subplots(rows, cols, figsize=(15, 10))
-        
-        # Handle different subplot configurations
-        if num_indices == 1:
-            axes = [axes]
-        elif rows == 1:
-            axes = axes.reshape(1, -1)
-        
-        axes_flat = axes.flatten() if num_indices > 1 else axes
-        
-        for i in range(num_indices):
-            ax = axes_flat[i]
-            gaussian_params = self.get_gaussian_for_index(i, num_indices)
-            pdf = self.compute_pdf(x_points, gaussian_params)
-            
-            if gaussian_params['type'] == 'single_gaussian':
-                ax.plot(x_points, pdf, linewidth=2, 
-                       label=f"μ={gaussian_params['mu']}, σ={gaussian_params['sigma']}")
-                ax.fill_between(x_points, pdf, alpha=0.3)
-                title = f'Index {i}: Single Gaussian'
-                
-            else:  # mixture
-                # Plot individual components
-                for j, component in enumerate(gaussian_params['components']):
-                    comp_pdf = component['weight'] * norm.pdf(
-                        x_points, component['mu'], component['sigma']
-                    )
-                    ax.plot(x_points, comp_pdf, '--', alpha=0.7,
-                           label=f"μ={component['mu']}, σ={component['sigma']}")
-                
-                # Plot mixture
-                ax.plot(x_points, pdf, linewidth=2, label='Mixture')
-                ax.fill_between(x_points, pdf, alpha=0.3)
-                title = f'Index {i}: Gaussian Mixture'
-            
-            ax.set_title(title, fontsize=12)
-            ax.set_xlabel('Value')
-            ax.set_ylabel('Probability Density')
-            ax.grid(True, alpha=0.3)
-            ax.legend(fontsize=8)
-            ax.set_ylim(0, max(2.5, ax.get_ylim()[1]))
-        
-        # Hide empty subplots
-        for i in range(num_indices, len(axes_flat)):
-            axes_flat[i].set_visible(False)
-        
-        plt.tight_layout()
-        
-        if save_plots:
-            os.makedirs(output_dir, exist_ok=True)
-            output_file = f"{output_dir}/separate_gaussians_{num_indices}_indices.png"
-            plt.savefig(output_file, dpi=150, bbox_inches='tight')
-            print(f"Separate Gaussians plot saved as: {output_file}")
-        
-        plt.show()
-    
-    def plot_combined_gaussians(self, num_indices, output_dir="results_long", save_plots=True):
-        """
-        Create combined plot of all Gaussian distributions.
-        
-        Args:
-            num_indices (int): Number of indices to plot
-            output_dir (str): Directory to save plots
-            save_plots (bool): Whether to save plots to files
-        """
-        x_range = self.plotting_settings['x_range']
-        x_points = np.linspace(x_range[0], x_range[1], self.plotting_settings['num_points'])
-        colors = cm.get_cmap('tab10')(np.linspace(0, 1, num_indices))
-        
-        plt.figure(figsize=(12, 8))
-        
-        for i in range(num_indices):
-            gaussian_params = self.get_gaussian_for_index(i, num_indices)
-            pdf = self.compute_pdf(x_points, gaussian_params)
-            
-            if gaussian_params['type'] == 'single_gaussian':
-                label = f'Index {i}: μ={gaussian_params["mu"]}, σ={gaussian_params["sigma"]}'
-            else:
-                label = f'Index {i}: Mixture'
-            
-            plt.plot(x_points, pdf, color=colors[i], linewidth=2, label=label)
-        
-        plt.xlabel('Value', fontsize=12)
-        plt.ylabel('Probability Density', fontsize=12)
-        plt.title(f'Comparison of {num_indices} 1D Gaussian Distributions', fontsize=14)
-        plt.grid(True, alpha=0.3)
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        plt.tight_layout()
-        
-        if save_plots:
-            os.makedirs(output_dir, exist_ok=True)
-            output_file = f"{output_dir}/combined_gaussians_{num_indices}_indices.png"
-            plt.savefig(output_file, dpi=150, bbox_inches='tight')
-            print(f"Combined Gaussians plot saved as: {output_file}")
-        
-        plt.show()
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Plot latent results with theoretical Gaussian distributions')
+    parser = argparse.ArgumentParser(description='Plot overlay of latent results with theoretical Gaussian distributions')
     parser.add_argument('--csv', type=str, required=True,
                         help='Path to CSV file containing latent data')
     parser.add_argument('--config', type=str, default='gaussian_parameters.json',
@@ -299,9 +276,12 @@ def main():
                         help='Output directory for plots (default: results_long)')
     parser.add_argument('--no_save', action='store_true',
                         help='Don\'t save plots to files, only display')
-    parser.add_argument('--plot_type', type=str, default='all', 
-                        choices=['overlay', 'separate', 'combined', 'all'],
-                        help='Type of plots to generate (default: all)')
+    parser.add_argument('--no_data', action='store_true',
+                        help='Show only theoretical distributions without data points')
+    parser.add_argument('--no_connections', action='store_true',
+                        help='Don\'t show connection lines between data points')
+    parser.add_argument('--show_transitions', action='store_true',
+                        help='Show valid mode transition arrows between consecutive indices')
     
     args = parser.parse_args()
     
@@ -317,6 +297,9 @@ def main():
     # Initialize plotter
     plotter = GaussianPlotter(args.config)
     save_plots = not args.no_save
+    show_data = not args.no_data
+    show_connections = not args.no_connections
+    show_transitions = args.show_transitions
     
     # Determine number of indices from CSV
     df = pd.read_csv(args.csv)
@@ -324,22 +307,19 @@ def main():
     num_indices = len(latent_cols)
     
     print(f"Found {num_indices} latent dimensions in CSV file")
-    print(f"Generating plots...")
     
-    # Generate requested plots
-    if args.plot_type in ['overlay', 'all']:
-        print("\nGenerating overlay plot...")
-        plotter.plot_overlay(args.csv, args.output_dir, save_plots)
+    plot_description = []
+    if show_data:
+        plot_description.append("data")
+    plot_description.append("theoretical distributions")
+    if show_transitions:
+        plot_description.append("transition arrows")
     
-    if args.plot_type in ['separate', 'all']:
-        print("\nGenerating separate Gaussians plot...")
-        plotter.plot_separate_gaussians(num_indices, args.output_dir, save_plots)
+    print(f"Generating plot with: {', '.join(plot_description)}...")
     
-    if args.plot_type in ['combined', 'all']:
-        print("\nGenerating combined Gaussians plot...")
-        plotter.plot_combined_gaussians(num_indices, args.output_dir, save_plots)
+    plotter.plot_overlay(args.csv, args.output_dir, save_plots, show_data, show_connections, show_transitions)
     
-    print("\nPlotting completed!")
+    print("Plotting completed!")
 
 
 if __name__ == "__main__":
