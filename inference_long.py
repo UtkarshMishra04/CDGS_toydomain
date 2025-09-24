@@ -7,6 +7,8 @@ import torch.nn as nn
 import argparse
 from tqdm import tqdm
 import numpy as np
+import pandas as pd
+from scipy.stats import norm
 
 from model import create_simple_diffusion_model
 
@@ -15,6 +17,145 @@ def seed_everything(seed):
     torch.cuda.manual_seed(seed)
     # torch.backends.cudnn.deterministic = True
     # torch.backends.cudnn.benchmark = True
+
+def plot_1d_gaussians(num_indices, figsize=(15, 10), x_range=(-3, 3), num_points=1000):
+    """
+    Plot 1D Gaussian distributions for each index according to specifications:
+    - i = 0: mu = 0, std = 0.5
+    - i = -1 (last): mu = 0, std = 0.25  
+    - i = every other index: mixture of two gaussians (mu = 0.75, std=0.25) and (mu = -0.75, std=0.25)
+    
+    Args:
+        num_indices (int): Total number of indices to plot
+        figsize (tuple): Figure size (width, height)
+        x_range (tuple): Range of x values for plotting
+        num_points (int): Number of points for smooth curves
+    """
+    import matplotlib.pyplot as plt
+    
+    x = np.linspace(x_range[0], x_range[1], num_points)
+    
+    # Create subplot grid
+    cols = min(4, num_indices)
+    rows = (num_indices + cols - 1) // cols
+    fig, axes = plt.subplots(rows, cols, figsize=figsize)
+    
+    # Handle case where we have only one subplot
+    if num_indices == 1:
+        axes = [axes]
+    elif rows == 1:
+        axes = axes.reshape(1, -1)
+    
+    # Flatten axes for easier indexing
+    axes_flat = axes.flatten() if num_indices > 1 else axes
+    
+    for i in range(num_indices):
+        ax = axes_flat[i]
+        
+        if i == 0:
+            # First index: single Gaussian with mu=0, std=0.5
+            mu, std = 0, 0.5
+            y = norm.pdf(x, mu, std)
+            ax.plot(x, y, 'b-', linewidth=2, label=f'μ={mu}, σ={std}')
+            ax.fill_between(x, y, alpha=0.3, color='blue')
+            title = f'Index {i}: Single Gaussian'
+            
+        elif i == num_indices - 1:
+            # Last index: single Gaussian with mu=0, std=0.25
+            mu, std = 0, 0.25
+            y = norm.pdf(x, mu, std)
+            ax.plot(x, y, 'g-', linewidth=2, label=f'μ={mu}, σ={std}')
+            ax.fill_between(x, y, alpha=0.3, color='green')
+            title = f'Index {i}: Single Gaussian'
+            
+        else:
+            # Middle indices: mixture of two Gaussians
+            mu1, std1 = 0.75, 0.25
+            mu2, std2 = -0.75, 0.25
+            weight = 0.5  # Equal mixture
+            
+            y1 = norm.pdf(x, mu1, std1)
+            y2 = norm.pdf(x, mu2, std2)
+            y_mixture = weight * y1 + weight * y2
+            
+            ax.plot(x, y1, 'r--', linewidth=1.5, alpha=0.7, label=f'μ={mu1}, σ={std1}')
+            ax.plot(x, y2, 'orange', linestyle='--', linewidth=1.5, alpha=0.7, label=f'μ={mu2}, σ={std2}')
+            ax.plot(x, y_mixture, 'purple', linewidth=2, label='Mixture')
+            ax.fill_between(x, y_mixture, alpha=0.3, color='purple')
+            title = f'Index {i}: Gaussian Mixture'
+        
+        ax.set_title(title, fontsize=12)
+        ax.set_xlabel('Value')
+        ax.set_ylabel('Probability Density')
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=8)
+        
+        # Set consistent y-axis limits for better comparison
+        ax.set_ylim(0, max(2.5, ax.get_ylim()[1]))
+    
+    # Hide empty subplots if any
+    for i in range(num_indices, len(axes_flat)):
+        axes_flat[i].set_visible(False)
+    
+    plt.tight_layout()
+    plt.savefig(f"results_long/gaussian_distributions_{num_indices}_indices.png", dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Gaussian distributions plot saved as 'results_long/gaussian_distributions_{num_indices}_indices.png'")
+
+def plot_1d_gaussians_combined(num_indices, figsize=(12, 8), x_range=(-3, 3), num_points=1000):
+    """
+    Plot all 1D Gaussian distributions on a single plot for comparison.
+    
+    Args:
+        num_indices (int): Total number of indices to plot
+        figsize (tuple): Figure size (width, height)
+        x_range (tuple): Range of x values for plotting
+        num_points (int): Number of points for smooth curves
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.cm as cm
+    
+    x = np.linspace(x_range[0], x_range[1], num_points)
+    colors = cm.get_cmap('tab10')(np.linspace(0, 1, num_indices))
+    
+    plt.figure(figsize=figsize)
+    
+    for i in range(num_indices):
+        if i == 0:
+            # First index: single Gaussian with mu=0, std=0.5
+            mu, std = 0, 0.5
+            y = norm.pdf(x, mu, std)
+            plt.plot(x, y, color=colors[i], linewidth=2, label=f'Index {i}: μ={mu}, σ={std}')
+            
+        elif i == num_indices - 1:
+            # Last index: single Gaussian with mu=0, std=0.25
+            mu, std = 0, 0.25
+            y = norm.pdf(x, mu, std)
+            plt.plot(x, y, color=colors[i], linewidth=2, label=f'Index {i}: μ={mu}, σ={std}')
+            
+        else:
+            # Middle indices: mixture of two Gaussians
+            mu1, std1 = 0.75, 0.25
+            mu2, std2 = -0.75, 0.25
+            weight = 0.5  # Equal mixture
+            
+            y1 = norm.pdf(x, mu1, std1)
+            y2 = norm.pdf(x, mu2, std2)
+            y_mixture = weight * y1 + weight * y2
+            
+            plt.plot(x, y_mixture, color=colors[i], linewidth=2, label=f'Index {i}: Mixture')
+    
+    plt.xlabel('Value', fontsize=12)
+    plt.ylabel('Probability Density', fontsize=12)
+    plt.title(f'Comparison of {num_indices} 1D Gaussian Distributions', fontsize=14)
+    plt.grid(True, alpha=0.3)
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.savefig(f"results_long/gaussian_distributions_combined_{num_indices}_indices.png", dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Combined Gaussian distributions plot saved as 'results_long/gaussian_distributions_combined_{num_indices}_indices.png'")
 
 class ToyDomainDiffusion(nn.Module):
     def __init__(self, device, num_bridges=4):
@@ -259,6 +400,8 @@ if __name__ == '__main__':
                         help='inference mode')
     parser.add_argument('--num_bridges', type=int, default=4,
                         help='number of bridge models between the two reference models')
+    parser.add_argument('--plot_gaussians', action='store_true',
+                        help='plot the 1D Gaussian distributions for each index')
 
     opt = parser.parse_args()
 
@@ -285,24 +428,81 @@ if __name__ == '__main__':
 
     latents = latents.cpu().numpy()
 
+    # Save latents to CSV file
+    num_xs = len(sd.views) + 1
+    print(f"\nSaving latents to CSV file...")
+    
+    # Create DataFrame with appropriate column names
+    column_names = [f'x{i+1}' for i in range(num_xs)]
+    latents_df = pd.DataFrame(latents, columns=column_names)
+    
+    # Add metadata columns
+    latents_df['mode'] = opt.mode
+    latents_df['steps'] = opt.steps
+    latents_df['seed'] = opt.seed
+    latents_df['num_bridges'] = opt.num_bridges
+    
+    # Save to CSV
+    csv_filename = f"results_long/latents_{opt.mode}_{opt.steps}steps_seed{opt.seed}_bridges{opt.num_bridges}.csv"
+    latents_df.to_csv(csv_filename, index=False)
+    print(f"Latents saved to: {csv_filename}")
+
+    # Plot the 1D Gaussian distributions for each index if requested
+    if opt.plot_gaussians:
+        print(f"\nPlotting 1D Gaussian distributions for {num_xs} indices...")
+        plot_1d_gaussians(num_xs)
+        plot_1d_gaussians_combined(num_xs)
+
     # plot latents[0] at x = 0, latents[1] at x = 1, latents[2] at x = 2, latents[3] at x = 3
     import matplotlib.pyplot as plt
-    plt.figure(figsize=(8, 8))
+    plt.figure(figsize=(12, 8))
 
-    num_xs = len(sd.views) + 1
-
+    # Plot scatter points for generated samples
     for i in range(num_xs):
-        plt.scatter(np.ones_like(latents[:, i]) * i, latents[:, i], label=f'x{i+1}', alpha=0.5)
+        plt.scatter(np.ones_like(latents[:, i]) * i, latents[:, i], label=f'x{i+1} samples', alpha=0.5, s=20)
+
+    # Plot theoretical Gaussian distributions overlaid on the scatter plot
+    y_range = (latents.min() - 0.5, latents.max() + 0.5)
+    y_points = np.linspace(y_range[0], y_range[1], 200)
+    
+    for i in range(num_xs):
+        if i == 0:
+            # First index: single Gaussian with mu=0, std=0.5
+            mu, std = 0, 0.5
+            gaussian_pdf = norm.pdf(y_points, mu, std)
+            # Scale and shift the PDF to overlay nicely on the plot
+            gaussian_scaled = i + gaussian_pdf * 0.3  # Scale factor to make it visible
+            plt.plot(gaussian_scaled, y_points, 'b-', linewidth=2, alpha=0.8, label=f'x{i+1} theory (μ={mu}, σ={std})')
+            
+        elif i == num_xs - 1:
+            # Last index: single Gaussian with mu=0, std=0.25
+            mu, std = 0, 0.25
+            gaussian_pdf = norm.pdf(y_points, mu, std)
+            gaussian_scaled = i + gaussian_pdf * 0.3
+            plt.plot(gaussian_scaled, y_points, 'g-', linewidth=2, alpha=0.8, label=f'x{i+1} theory (μ={mu}, σ={std})')
+            
+        else:
+            # Middle indices: mixture of two Gaussians
+            mu1, std1 = 0.75, 0.25
+            mu2, std2 = -0.75, 0.25
+            weight = 0.5  # Equal mixture
+            
+            gaussian1_pdf = norm.pdf(y_points, mu1, std1)
+            gaussian2_pdf = norm.pdf(y_points, mu2, std2)
+            mixture_pdf = weight * gaussian1_pdf + weight * gaussian2_pdf
+            
+            mixture_scaled = i + mixture_pdf * 0.3
+            plt.plot(mixture_scaled, y_points, 'purple', linewidth=2, alpha=0.8, label=f'x{i+1} theory (mixture)')
 
     # plot lines between latents[0] and latents[1], latents[1] and latents[2], latents[2] and latents[3]
-    for i in range(latents.shape[0] - 1):
-        # plt.plot([0., 1., 2., 3.], [latents[i, 0], latents[i, 1], latents[i, 2], latents[i, 3]], color='gray', alpha=0.2)
-        plt.plot(range(num_xs), latents[i], color='gray', alpha=0.2)
+    for i in range(min(latents.shape[0] - 1, 50)):  # Limit to 50 lines for clarity
+        plt.plot(range(num_xs), latents[i], color='gray', alpha=0.1, linewidth=0.5)
 
-    plt.title(f'Generated samples after {opt.steps} steps of {opt.mode} inference')
-    plt.xlabel('Dummy X-axis')
-    plt.ylabel('Dummy Y-axis')
-    plt.legend()
-    plt.grid()
-    plt.savefig(f"results_long/long_{opt.outfile}_samples_{opt.mode}_{opt.steps}_steps.png")
+    plt.title(f'Generated samples vs theoretical distributions after {opt.steps} steps of {opt.mode} inference')
+    plt.xlabel('Index')
+    plt.ylabel('Value')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(f"results_long/long_{opt.outfile}_samples_{opt.mode}_{opt.steps}_steps.png", dpi=150, bbox_inches='tight')
     plt.close()

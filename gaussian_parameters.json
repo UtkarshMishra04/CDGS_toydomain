@@ -1,0 +1,55 @@
+{
+    "description": "Gaussian parameters for 1D distributions at each index position",
+    "parameters": {
+        "index_0": {
+            "type": "single_gaussian",
+            "mu": 0.0,
+            "sigma": 0.2,
+            "description": "First index: single Gaussian with mu=0, std=0.5"
+        },
+        "index_last": {
+            "type": "single_gaussian",
+            "mu": 0.0,
+            "sigma": 0.1,
+            "description": "Last index: single Gaussian with mu=0, std=0.25"
+        },
+        "index_middle": {
+            "type": "mixture_gaussian",
+            "components": [
+                {
+                    "mu": 0.75,
+                    "sigma": 0.1,
+                    "weight": 0.5
+                },
+                {
+                    "mu": -0.75,
+                    "sigma": 0.1,
+                    "weight": 0.5
+                }
+            ],
+            "description": "Middle indices: mixture of two Gaussians (mu=±0.75, sigma=0.25, equal weights)"
+        }
+    },
+    "rules": {
+        "index_assignment": {
+            "0": "index_0",
+            "-1": "index_last",
+            "others": "index_middle"
+        }
+    },
+    "plotting_settings": {
+        "x_range": [
+            -3,
+            3
+        ],
+        "num_points": 1000,
+        "pdf_scale_factor": 0.3,
+        "colors": {
+            "index_0": "blue",
+            "index_last": "green",
+            "index_middle": "purple"
+        },
+        "alpha": 0.8,
+        "linewidth": 2
+    }
+}
