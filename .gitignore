@@ -1,0 +1,30 @@
+# Python cache and artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Figures
+figures/
+
+# Slurm logs
+slurm_logs/
+
+# OS files
+*.swp
+*.swo
+.DS_Store
+
+# Shell script output
+*.out
+
+# Environment files
+.env
+
+# VS Code
+.vscode/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+*.sh
