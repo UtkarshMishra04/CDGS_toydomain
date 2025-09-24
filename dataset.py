@@ -471,10 +471,11 @@ if __name__ == "__main__":
         num_modes_x2=2,
         mode_spacing_x1=2.0,
         mode_spacing_x2=1.5,
-        mode_std_x1=0.2,
+        mode_std_x1=0.1,
         mode_std_x2=0.1,
         transition_matrix=custom_matrix
     )
+    print("Mode centers X1:", dataset_custom.centers_x1)
     print("Custom transition matrix:")
     print(custom_matrix.astype(int))
     print("Valid combinations:", dataset_custom.get_valid_combinations_info()['valid_mode_pairs'])

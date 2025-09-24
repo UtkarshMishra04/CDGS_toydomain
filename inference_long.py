@@ -28,7 +28,7 @@ class ToyDomainDiffusion(nn.Module):
         self.models += [self.model2]*num_bridges
         self.models += [self.model3]
         self.models[0].load_state_dict(torch.load("models/simple_diffusion_model_1.pth", map_location=device))
-        self.models[-1].load_state_dict(torch.load("models/simple_diffusion_model_3.pth", map_location=device))
+        self.models[-1].load_state_dict(torch.load("models/simple_diffusion_model_3_new.pth", map_location=device))
         for id, model in enumerate(self.models[1:-1]):
             model.load_state_dict(torch.load(f"models/simple_diffusion_model_2.pth", map_location=device))
 

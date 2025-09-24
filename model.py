@@ -327,7 +327,7 @@ if __name__ == "__main__":
         mode_spacing_x1=2.0,
         mode_spacing_x2=1.5,
         mode_std_x1=0.2,
-        mode_std_x2=0.1,
+        mode_std_x2=0.2,
         transition_matrix=custom_matrix
     )
     dataloader = DataLoader(dataset_custom, batch_size=256, shuffle=True)
