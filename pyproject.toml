@@ -1,0 +1,13 @@
+[project]
+name = "cdgs-toydomain"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "diffusers>=0.35.1",
+    "matplotlib>=3.10.6",
+    "pandas>=2.3.2",
+    "scipy>=1.16.2",
+    "torch>=2.8.0",
+]
