@@ -59,11 +59,12 @@ diffusion_model_paths = {
 
 
 def main(args):
+    num_bridges = args.horizon_length - 2
     sampler = CDGS(
         model_paths=diffusion_model_paths,
         device=str(device),
         model_type=SimpleDiffusionModel,
-        num_bridges=args.num_bridges,
+        num_bridges=num_bridges,
         num_resampling_steps=args.num_resampling_steps,
         pruning_start=args.pruning_start,
         pruning_end=args.pruning_end,
@@ -79,14 +80,14 @@ def main(args):
     time_taken = time.monotonic() - start
     print(f"Time taken: {time_taken} seconds")
     valid_paths, _ = MultiModalDataset.evaluate_paths(
-        [start_dataset] + [bridge_dataset] * args.num_bridges + [end_dataset],
+        [start_dataset] + [bridge_dataset] * num_bridges + [end_dataset],
         samples.cpu().numpy(),
     )
     print(f"Success Rate: {np.mean(valid_paths)}")
     # print(f"Step validities: {np.mean(step_validities)}")
 
     fig = MultiModalDataset.plot_multi_step_transitions(
-        [start_dataset] + [bridge_dataset] * args.num_bridges + [end_dataset],
+        [start_dataset] + [bridge_dataset] * num_bridges + [end_dataset],
         samples.cpu().numpy(),
         annotate_valid=True,
     )
@@ -109,6 +110,7 @@ def main(args):
         json.dump(
             {
                 "time": time_taken,
+                "horizon_length": args.horizon_length,
                 "success_rate": np.mean(valid_paths),
                 "samples_shape": samples.shape,
                 "enable_pruning": args.enable_pruning,
@@ -126,7 +128,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--num-samples-to-generate", type=int, default=100)
     parser.add_argument("--num-inference-steps", type=int, default=100)
-    parser.add_argument("--num-bridges", type=int, default=5)
+    parser.add_argument("--horizon-length", type=int, default=7)
 
     parser.add_argument("--pruning-start", type=float, default=0.0)
     parser.add_argument("--enable-pruning", type=bool, default=False)
@@ -134,6 +136,6 @@ if __name__ == "__main__":
     parser.add_argument("--pruning-top-K", type=float, default=0.2)
     parser.add_argument("--num-resampling-steps", type=int, default=10)
 
-    parser.add_argument("--output_directory", type=str, default="./profile")
+    parser.add_argument("--output-directory", type=str, default="./profile")
     args = parser.parse_args()
     main(args)
