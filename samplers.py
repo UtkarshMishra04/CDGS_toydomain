@@ -364,6 +364,49 @@ class CDGS(nn.Module):
             return arranged_batch, final_scores
         return arranged_batch
 
+    def add_noise(self, pred_original_sample, sample, t):
+        prev_t = self.scheduler.previous_timestep(t)
+
+        # 1. compute alphas, betas
+        alpha_prod_t = self.scheduler.alphas_cumprod[t]
+        alpha_prod_t_prev = (
+            self.scheduler.alphas_cumprod[prev_t] if prev_t >= 0 else self.scheduler.one
+        )
+        beta_prod_t = 1 - alpha_prod_t
+        beta_prod_t_prev = 1 - alpha_prod_t_prev
+        current_alpha_t = alpha_prod_t / alpha_prod_t_prev
+        current_beta_t = 1 - current_alpha_t
+
+        # 4. Compute coefficients for pred_original_sample x_0 and current sample x_t
+        # See formula (7) from https://huggingface.co/papers/2006.11239
+        pred_original_sample_coeff = (
+            alpha_prod_t_prev ** (0.5) * current_beta_t
+        ) / beta_prod_t
+        current_sample_coeff = current_alpha_t ** (0.5) * beta_prod_t_prev / beta_prod_t
+
+        # 5. Compute predicted previous sample µ_t
+        # See formula (7) from https://huggingface.co/papers/2006.11239
+        pred_prev_sample = (
+            pred_original_sample_coeff * pred_original_sample
+            + current_sample_coeff * sample
+        )
+
+        # 6. Add noise
+        variance = 0
+        if t > 0:
+            variance_noise = randn_tensor(
+                pred_prev_sample.shape,
+                generator=None,
+                device=pred_prev_sample.device,
+                dtype=pred_prev_sample.dtype,
+            )
+            variance = (
+                self.scheduler._get_variance(t, predicted_variance=None) ** 0.5
+            ) * variance_noise
+
+        pred_prev_sample = pred_prev_sample + variance
+        return pred_prev_sample
+
     @torch.no_grad()
     def sample(self, batch_size=100, num_inference_steps=100):
         """
@@ -406,7 +449,9 @@ class CDGS(nn.Module):
                         # Take denoising step
                         output = self.scheduler.step(eps_pred, t, latent)
                         pred_x0 = output.pred_original_sample
-                        latent = output.prev_sample
+                        pred_x0[:, 0] = 0
+                        pred_x0[:, -1] = 0
+                        latent = self.add_noise(pred_x0, latent, t)
 
                     else:  # flow model
                         # Flow model sampling is scaffolded for future implementation
