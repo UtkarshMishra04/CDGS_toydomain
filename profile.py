@@ -78,6 +78,12 @@ def main(args):
     )
     time_taken = time.monotonic() - start
     print(f"Time taken: {time_taken} seconds")
+    valid_paths, _ = MultiModalDataset.evaluate_paths(
+        [start_dataset] + [bridge_dataset] * args.num_bridges + [end_dataset],
+        samples.cpu().numpy(),
+    )
+    print(f"Success Rate: {np.mean(valid_paths)}")
+    # print(f"Step validities: {np.mean(step_validities)}")
 
     fig = MultiModalDataset.plot_multi_step_transitions(
         [start_dataset] + [bridge_dataset] * args.num_bridges + [end_dataset],
@@ -103,6 +109,7 @@ def main(args):
         json.dump(
             {
                 "time": time_taken,
+                "success_rate": np.mean(valid_paths),
                 "samples_shape": samples.shape,
                 "enable_pruning": args.enable_pruning,
                 "pruning_start": args.pruning_start,

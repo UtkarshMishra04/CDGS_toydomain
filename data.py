@@ -290,6 +290,20 @@ class MultiModalDataset(Dataset):
         return is_fully_valid, step_validities
 
     @staticmethod
+    def evaluate_paths(datasets: List['MultiModalDataset'], paths: List[np.ndarray], num_stds: float = 3.0) -> Tuple[List[bool], List[List[bool]]]:
+        """Evaluate a list of paths against the dataset.
+        
+        Args:
+            paths: List of paths to evaluate
+            num_stds: Number of standard deviations to consider as "in-distribution"
+            
+        Returns:
+            List of booleans indicating if each path is valid
+        """
+        results = [MultiModalDataset._validate_full_path(path, datasets, num_stds) for path in paths]
+        return [result[0] for result in results], [result[1] for result in results]
+        
+    @staticmethod
     def plot_multi_step_transitions(datasets: List['MultiModalDataset'], samples: np.ndarray, 
                                    title: Optional[str] = None, annotate_valid: bool = True,
                                    num_stds: float = 3.0, n: int = 25) -> plt.Figure:
