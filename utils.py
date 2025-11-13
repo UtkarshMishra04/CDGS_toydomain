@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 
+
 def seed_everything(seed: int = 42) -> None:
     """Set Python, NumPy and PyTorch seeds for reproducible experiments.
 
@@ -18,7 +19,7 @@ def seed_everything(seed: int = 42) -> None:
 def load_models(device, model_paths, model_class, num_bridges=4):
     """
     Load pre-trained diffusion models for compositional sampling
-    
+
     Args:
         device: torch device
         model_paths: dict with keys
@@ -27,11 +28,13 @@ def load_models(device, model_paths, model_class, num_bridges=4):
             'end': path to second edge model
         model_class: SimpleDiffusionModel or FlowMatchingModel
         num_bridges: number of bridge models between edge models
-    
+
     Returns:
         List of loaded models
     """
-    assert all(key in model_paths for key in ['start', 'bridge', 'end']), "model_paths must contain 'start', 'bridge', and 'end' keys"
+    assert all(key in model_paths for key in ["start", "bridge", "end"]), (
+        "model_paths must contain 'start', 'bridge', and 'end' keys"
+    )
 
     # Create model instances
     model_start = model_class()  # Edge model start
@@ -48,16 +51,18 @@ def load_models(device, model_paths, model_class, num_bridges=4):
 
         # Load bridge models
         for model in models[1:-1]:
-            model.load_state_dict(torch.load(model_paths["bridge"], map_location=device))
-        
+            model.load_state_dict(
+                torch.load(model_paths["bridge"], map_location=device)
+            )
+
         # Move to device and set to eval mode
         for model in models:
             model.to(device)
             model.eval()
-            
+
         print(f"Successfully loaded {len(models)} models")
         return models
-        
+
     except FileNotFoundError as e:
         print(f"Model checkpoint not found: {e}")
         print("Note: You'll need pre-trained models to run the full demo")
