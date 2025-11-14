@@ -69,7 +69,7 @@ def main(args):
         pruning_start=args.pruning_start,
         pruning_end=args.pruning_end,
         pruning_top_K=args.pruning_top_K,
-        enable_pruning=True,
+        enable_pruning=args.enable_pruning,
     )
 
     start = time.monotonic()
@@ -130,8 +130,8 @@ if __name__ == "__main__":
     parser.add_argument("--num-inference-steps", type=int, default=100)
     parser.add_argument("--horizon-length", type=int, default=7)
 
+    parser.add_argument("--enable-pruning", type=bool, default=True)
     parser.add_argument("--pruning-start", type=float, default=0.0)
-    parser.add_argument("--enable-pruning", type=bool, default=False)
     parser.add_argument("--pruning-end", type=float, default=1.0)
     parser.add_argument("--pruning-top-K", type=float, default=0.2)
     parser.add_argument("--num-resampling-steps", type=int, default=10)
