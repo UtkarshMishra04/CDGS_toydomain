@@ -7,7 +7,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=5
 #SBATCH --mem=128G
-#SBATCH --gres=gpu:l40s:1
+#SBATCH --gres=gpu:a40:1
 #SBATCH --array=0-9
 
 # Exit on error
@@ -15,7 +15,7 @@ set -e
 
 # Define the parameter space
 HORIZON_LENGTHS=($(seq 2 100))  # 99 values
-RESAMPLING_STEPS=(0 5 10 15 20)  # 5 values
+RESAMPLING_STEPS=(1 5 10 15 20)  # 5 values
 
 # Total combinations: 99 * 5 = 495
 # Split into 10 array jobs, each handling ~50 combinations

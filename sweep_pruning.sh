@@ -7,7 +7,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=5
 #SBATCH --mem=128G
-#SBATCH --gres=gpu:l40s:1
+#SBATCH --gres=gpu:a40:1
 #SBATCH --array=0-9
 
 # Exit on error
@@ -19,8 +19,8 @@ set -e
 PAIRS=()
 for start in 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9; do
     for end in 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0; do
-        # Only add if end > start (using bc for float comparison)
-        if (( $(echo "$end > $start" | bc -l) )); then
+        # Only add if end > start (using awk for float comparison)
+        if awk "BEGIN {exit !($end > $start)}"; then
             PAIRS+=("$start,$end")
         fi
     done
@@ -51,7 +51,7 @@ for ((i=START_IDX; i<END_IDX; i++)); do
     echo "Running pair $i: pruning_start=$PRUNING_START, pruning_end=$PRUNING_END"
 
     uv run sampling_time_single.py \
-        --horizon-length 20 \
+        --horizon-length 10 \
         --num-resampling-steps 10 \
         --enable-pruning True \
         --pruning-start $PRUNING_START \

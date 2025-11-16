@@ -264,7 +264,9 @@ class CDGS(nn.Module):
         loaded_models = load_models(device, model_paths, model_type, num_bridges)
         if loaded_models:
             self.model = loaded_models[0]  # Use only the first model for all views
-            self.num_models = len(loaded_models)  # Store original number for view creation
+            self.num_models = len(
+                loaded_models
+            )  # Store original number for view creation
             self.views = create_views(self.num_models)
             self.latent_dim = self.views[-1][1]
         else:
@@ -280,7 +282,7 @@ class CDGS(nn.Module):
         )
 
         # Print configuration summary
-        print("✅ CDGS initialized:")
+        print("CDGS initialized:")
         print(f"  Model type: {self.model_type}")
         print(f"  Using single model for all views")
         print(f"  Number of views: {self.num_models}")

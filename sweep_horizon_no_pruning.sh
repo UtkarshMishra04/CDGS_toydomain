@@ -7,7 +7,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=5
 #SBATCH --mem=128G
-#SBATCH --gres=gpu:l40s:1
+#SBATCH --gres=gpu:a40:1
 
 # Exit on error
 set -e
@@ -18,7 +18,7 @@ HORIZON_LENGTHS=$(seq 2 100)
 for HORIZON_LENGTH in ${HORIZON_LENGTHS[@]}; do
     uv run sampling_time_single.py \
         --horizon-length $HORIZON_LENGTH \
-        --num-resampling-steps 0 \
+        --num-resampling-steps 1 \
         --enable-pruning False \
         --output-directory profile/sweep_horizon_no_pruning
 done
