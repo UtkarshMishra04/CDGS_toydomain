@@ -9,8 +9,8 @@ mkdir -p "$OUTPUT_DIR"
 
 # Generate all expected combinations
 echo "Generating all expected horizon-resampling combinations..."
-HORIZON_LENGTHS=($(seq 2 100))  # 99 values
-RESAMPLING_STEPS=(1 5 10 15 20)  # 5 values
+HORIZON_LENGTHS=(5 10 20 30 40)  # 5 values
+RESAMPLING_STEPS=(1 5 10 15 20 25)  # 6 values
 
 EXPECTED_COMBINATIONS=()
 for horizon in "${HORIZON_LENGTHS[@]}"; do

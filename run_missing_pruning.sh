@@ -7,11 +7,11 @@ set -e
 OUTPUT_DIR="profile/sweep_pruning"
 mkdir -p "$OUTPUT_DIR"
 
-# Generate all expected (start, end) pairs where end > start
+# Generate all expected (start, end) pairs where end > start, in 0.2 increments
 echo "Generating all expected pruning pairs..."
 EXPECTED_PAIRS=()
-for start in 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9; do
-    for end in 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0; do
+for start in 0.0 0.2 0.4 0.6 0.8; do
+    for end in 0.2 0.4 0.6 0.8 1.0; do
         if awk "BEGIN {exit !($end > $start)}"; then
             EXPECTED_PAIRS+=("$start,$end")
         fi

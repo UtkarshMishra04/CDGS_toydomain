@@ -8,17 +8,17 @@
 #SBATCH --cpus-per-task=5
 #SBATCH --mem=128G
 #SBATCH --gres=gpu:a40:1
-#SBATCH --array=0-9
+#SBATCH --array=0-4
 
 # Exit on error
 set -e
 
-# Generate all (start, end) pairs where end > start, in 0.1 increments
-# start: 0.0, 0.1, ..., 0.9
-# end: 0.1, 0.2, ..., 1.0
+# Generate all (start, end) pairs where end > start, in 0.2 increments
+# start: 0.0, 0.2, 0.4, 0.6, 0.8
+# end: 0.2, 0.4, 0.6, 0.8, 1.0
 PAIRS=()
-for start in 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9; do
-    for end in 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0; do
+for start in 0.0 0.2 0.4 0.6 0.8; do
+    for end in 0.2 0.4 0.6 0.8 1.0; do
         # Only add if end > start (using awk for float comparison)
         if awk "BEGIN {exit !($end > $start)}"; then
             PAIRS+=("$start,$end")
@@ -26,10 +26,10 @@ for start in 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9; do
     done
 done
 
-# Total pairs: 55
-# Split into 10 array jobs, each handling ~6 pairs
+# Total pairs: 15 (5+4+3+2+1)
+# Split into 5 array jobs, each handling 3 pairs
 TOTAL_PAIRS=${#PAIRS[@]}
-NUM_ARRAY_JOBS=10
+NUM_ARRAY_JOBS=5
 PAIRS_PER_JOB=$((TOTAL_PAIRS / NUM_ARRAY_JOBS))
 START_IDX=$((SLURM_ARRAY_TASK_ID * PAIRS_PER_JOB))
 
@@ -52,7 +52,7 @@ for ((i=START_IDX; i<END_IDX; i++)); do
 
     uv run sampling_time_single.py \
         --horizon-length 10 \
-        --num-resampling-steps 10 \
+        --num-resampling-steps 5 \
         --enable-pruning True \
         --pruning-start $PRUNING_START \
         --pruning-end $PRUNING_END \

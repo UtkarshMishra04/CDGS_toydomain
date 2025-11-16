@@ -8,19 +8,19 @@
 #SBATCH --cpus-per-task=5
 #SBATCH --mem=128G
 #SBATCH --gres=gpu:a40:1
-#SBATCH --array=0-9
+#SBATCH --array=0-5
 
 # Exit on error
 set -e
 
 # Define the parameter space
-HORIZON_LENGTHS=($(seq 2 100))  # 99 values
-RESAMPLING_STEPS=(1 5 10 15 20)  # 5 values
+HORIZON_LENGTHS=(5 10 20 30 40)  # 5 values
+RESAMPLING_STEPS=(1 5 10 15 20 25)  # 6 values
 
-# Total combinations: 99 * 5 = 495
-# Split into 10 array jobs, each handling ~50 combinations
-TOTAL_COMBINATIONS=495
-NUM_ARRAY_JOBS=10
+# Total combinations: 5 * 6 = 30
+# Split into 6 array jobs, each handling 5 combinations
+TOTAL_COMBINATIONS=30
+NUM_ARRAY_JOBS=6
 COMBINATIONS_PER_JOB=$((TOTAL_COMBINATIONS / NUM_ARRAY_JOBS))
 START_IDX=$((SLURM_ARRAY_TASK_ID * COMBINATIONS_PER_JOB))
 
