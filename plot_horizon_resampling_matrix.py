@@ -20,6 +20,7 @@ for json_file in sorted(sweep_dir.glob("*.json")):
 
 # Get unique values for both dimensions
 horizons = sorted(list(set(d['horizon'] for d in data)))
+horizons = [x for x in horizons if x <= 40]
 resampling_steps = sorted(list(set(d['resampling'] for d in data)))
 
 # Create matrices for time and success rate
@@ -28,6 +29,8 @@ success_matrix = np.full((len(resampling_steps), len(horizons)), np.nan)
 
 # Fill the matrices
 for entry in data:
+    if entry['horizon'] > 40:
+        continue
     h_idx = horizons.index(entry['horizon'])
     r_idx = resampling_steps.index(entry['resampling'])
     time_matrix[r_idx, h_idx] = entry['time']
