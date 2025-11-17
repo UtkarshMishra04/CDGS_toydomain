@@ -100,20 +100,21 @@ def main(args):
             num_samples, seed
         )
 
+    checkpoints_dir = "checkpoints_frozen"
     # Build model paths based on dataset type and training mode
     if args.training_mode == "separate":
         # Separate models for start, bridge, end
         diffusion_model_paths = {
-            "start": f"./checkpoints/{args.dataset}_start_model.pth",
-            "bridge": f"./checkpoints/{args.dataset}_bridge_model.pth",
-            "end": f"./checkpoints/{args.dataset}_end_model.pth",
+            "start": f"./{checkpoints_dir}/{args.dataset}_start_model.pth",
+            "bridge": f"./{checkpoints_dir}/{args.dataset}_bridge_model.pth",
+            "end": f"./{checkpoints_dir}/{args.dataset}_end_model.pth",
         }
     else:  # unified
         # Single unified model for all components
         diffusion_model_paths = {
-            "start": f"./checkpoints/{args.dataset}_diffusion_model.pth",
-            "bridge": f"./checkpoints/{args.dataset}_diffusion_model.pth",
-            "end": f"./checkpoints/{args.dataset}_diffusion_model.pth",
+            "start": f"./{checkpoints_dir}/{args.dataset}_diffusion_model.pth",
+            "bridge": f"./{checkpoints_dir}/{args.dataset}_diffusion_model.pth",
+            "end": f"./{checkpoints_dir}/{args.dataset}_diffusion_model.pth",
         }
 
     num_bridges = args.horizon_length - 2
@@ -166,34 +167,41 @@ def main(args):
             annotate_valid=True,
         )
 
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    os.makedirs(args.output_directory, exist_ok=True)
-    fig.savefig(
-        os.path.join(
-            args.output_directory,
-            f"{timestamp}.png",
-        )
+    # Create filename based on parameters for easy identification and rerunning
+    pruning_str = (
+        "noprune"
+        if not args.enable_pruning
+        else f"prune_k{args.pruning_top_K}_s{args.pruning_start}_e{args.pruning_end}"
     )
-    with open(
-        os.path.join(
-            args.output_directory,
-            f"{timestamp}.json",
-        ),
-        "w",
-    ) as f:
+    filename = (
+        f"{args.dataset}_{args.training_mode}_"
+        f"h{args.horizon_length}_"
+        f"n{args.num_samples_to_generate}_"
+        f"inf{args.num_inference_steps}_"
+        f"res{args.num_resampling_steps}_"
+        f"{pruning_str}"
+    )
+
+    os.makedirs(args.output_directory, exist_ok=True)
+    fig.savefig(os.path.join(args.output_directory, f"{filename}.png"))
+
+    with open(os.path.join(args.output_directory, f"{filename}.json"), "w") as f:
         json.dump(
             {
                 "time": time_taken,
                 "dataset": args.dataset,
                 "training_mode": args.training_mode,
                 "horizon_length": args.horizon_length,
+                "num_samples_to_generate": args.num_samples_to_generate,
+                "batch_size": args.batch_size,
                 "success_rate": np.mean(valid_paths),
-                "samples_shape": samples.shape,
+                "samples_shape": list(samples.shape),
                 "enable_pruning": args.enable_pruning,
                 "pruning_start": args.pruning_start,
                 "pruning_end": args.pruning_end,
                 "pruning_top_K": args.pruning_top_K,
                 "num_resampling_steps": args.num_resampling_steps,
+                "num_inference_steps": args.num_inference_steps,
             },
             f,
             indent=4,

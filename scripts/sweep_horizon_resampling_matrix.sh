@@ -8,7 +8,7 @@
 #SBATCH --cpus-per-task=5
 #SBATCH --mem=128G
 #SBATCH --gres=gpu:a40:1
-#SBATCH --array=0-5
+#SBATCH --array=0-11
 
 # Exit on error
 set -e
@@ -16,11 +16,13 @@ set -e
 # Define the parameter space
 HORIZON_LENGTHS=(5 10 20 30 40)  # 5 values
 RESAMPLING_STEPS=(1 5 10 15 20 25)  # 6 values
+DATASETS=(multimodal uniform)  # 2 values
+TRAINING_MODES=(separate unified)  # 2 values
 
-# Total combinations: 5 * 6 = 30
-# Split into 6 array jobs, each handling 5 combinations
-TOTAL_COMBINATIONS=30
-NUM_ARRAY_JOBS=6
+# Total combinations: 5 * 6 * 2 * 2 = 120
+# Split into 12 array jobs, each handling 10 combinations
+TOTAL_COMBINATIONS=120
+NUM_ARRAY_JOBS=12
 COMBINATIONS_PER_JOB=$((TOTAL_COMBINATIONS / NUM_ARRAY_JOBS))
 START_IDX=$((SLURM_ARRAY_TASK_ID * COMBINATIONS_PER_JOB))
 
@@ -35,22 +37,39 @@ echo "Array job $SLURM_ARRAY_TASK_ID: Running combinations $START_IDX to $((END_
 
 # Loop through assigned combinations
 for ((i=START_IDX; i<END_IDX; i++)); do
-    # Calculate indices
+    # Calculate indices for 4D parameter space
     NUM_RESAMPLING=${#RESAMPLING_STEPS[@]}
-    HORIZON_IDX=$((i / NUM_RESAMPLING))
-    RESAMPLING_IDX=$((i % NUM_RESAMPLING))
+    NUM_DATASETS=${#DATASETS[@]}
+    NUM_TRAINING_MODES=${#TRAINING_MODES[@]}
+
+    # Flatten 4D indices: i = ((h * R + r) * D + d) * T + t
+    # where R=resampling, D=datasets, T=training_modes
+    TEMP=$i
+    TRAINING_MODE_IDX=$((TEMP % NUM_TRAINING_MODES))
+    TEMP=$((TEMP / NUM_TRAINING_MODES))
+    DATASET_IDX=$((TEMP % NUM_DATASETS))
+    TEMP=$((TEMP / NUM_DATASETS))
+    RESAMPLING_IDX=$((TEMP % NUM_RESAMPLING))
+    HORIZON_IDX=$((TEMP / NUM_RESAMPLING))
 
     # Get the actual values
     HORIZON=${HORIZON_LENGTHS[$HORIZON_IDX]}
     RESAMPLING=${RESAMPLING_STEPS[$RESAMPLING_IDX]}
+    DATASET=${DATASETS[$DATASET_IDX]}
+    TRAINING_MODE=${TRAINING_MODES[$TRAINING_MODE_IDX]}
 
-    echo "Running combination $i: horizon=$HORIZON, resampling=$RESAMPLING"
+    # Set output directory based on dataset and training mode
+    OUTPUT_DIR="profile/sweep_horizon_resampling_matrix/${DATASET}_${TRAINING_MODE}"
 
-    uv run sampling_time_single.py \
+    echo "Running combination $i: horizon=$HORIZON, resampling=$RESAMPLING, dataset=$DATASET, training_mode=$TRAINING_MODE"
+
+    uv run sampling.py \
+        --dataset $DATASET \
+        --training-mode $TRAINING_MODE \
         --horizon-length $HORIZON \
-        --enable-pruning False \
         --num-resampling-steps $RESAMPLING \
-        --output-directory profile/sweep_horizon_resampling_matrix
+        --disable-pruning \
+        --output-directory $OUTPUT_DIR
 done
 
 echo "Array job $SLURM_ARRAY_TASK_ID completed!"
