@@ -66,7 +66,7 @@ def undo_step(latents, timestep, scheduler, generator=None):
     return latents
 
 
-def compute_inversion_scores(batched_x0s, views, model, scheduler, device):
+def compute_inversion_scores(batched_x0s, views, models, scheduler, device):
     """
     Compute smoothness scores for predicted clean samples using DDIM inversion.
 
@@ -80,7 +80,7 @@ def compute_inversion_scores(batched_x0s, views, model, scheduler, device):
     Args:
         batched_x0s: clean predictions for each view, shape [num_models, B, local_dim]
         views: list of (start, end) tuples for each local plan
-        model: single model instance used for all views
+        models: list of model instances
         scheduler: DDPMScheduler instance
         device: torch device
 
@@ -116,16 +116,12 @@ def compute_inversion_scores(batched_x0s, views, model, scheduler, device):
         sqrt_one_minus_alpha_t_next = torch.sqrt(1 - alpha_t_next)
 
         with torch.no_grad():
-            # Batch all views together for efficient inference
-            # Stack: (num_models, B, local_dim) -> (num_models * B, local_dim)
-            batched_input = inversion_latents.reshape(num_models * B, -1)
-            batched_t = t.repeat(num_models * B).to(device)
-
-            # Single forward pass for all views
-            batched_noise_pred = model(batched_input, batched_t)
-
-            # Reshape back: (num_models * B, local_dim) -> (num_models, B, local_dim)
-            noise_pred_combined = batched_noise_pred.reshape(num_models, B, -1)
+            # Get noise predictions from each model for its corresponding view
+            noise_pred_combined = torch.zeros_like(inversion_latents)
+            for id, (start, end) in enumerate(views):
+                latent_view = inversion_latents[id]
+                noise_pred = models[id](latent_view, t.repeat(B).to(device))
+                noise_pred_combined[id] = noise_pred
 
             # DDIM inversion: predict x0, then predict next noisy state
             x0_pred = (
@@ -260,14 +256,10 @@ class CDGS(nn.Module):
         self.pruning_end = pruning_end
         self.pruning_top_K = pruning_top_K
 
-        # Load single model to be used for all views
-        loaded_models = load_models(device, model_paths, model_type, num_bridges)
-        if loaded_models:
-            self.model = loaded_models[0]  # Use only the first model for all views
-            self.num_models = len(
-                loaded_models
-            )  # Store original number for view creation
-            self.views = create_views(self.num_models)
+        # Load models and create sliding window views
+        self.models = load_models(device, model_paths, model_type, num_bridges)
+        if self.models:
+            self.views = create_views(len(self.models))
             self.latent_dim = self.views[-1][1]
         else:
             raise ValueError("Models could not be loaded. Please check model paths.")
@@ -284,8 +276,7 @@ class CDGS(nn.Module):
         # Print configuration summary
         print("CDGS initialized:")
         print(f"  Model type: {self.model_type}")
-        print(f"  Using single model for all views")
-        print(f"  Number of views: {self.num_models}")
+        print(f"  Number of models: {len(self.models)}")
         print(f"  Views: {self.views}")
         print(f"  Latent dimension: {self.latent_dim}")
         print(
@@ -316,35 +307,18 @@ class CDGS(nn.Module):
         value = torch.zeros_like(latent)
 
         B = latent.shape[0]
-        num_views = len(self.views)
 
         # Ensure time is a tensor with shape (B,)
         if not torch.is_tensor(t):
             t = torch.tensor(t, dtype=latent.dtype, device=self.device)
         t_vec = t.reshape(1).repeat(B).to(self.device)
 
-        # Batch all views together for efficient inference
-        # Collect all view inputs into a single batch
-        batched_views = []
-        for start, end in self.views:
-            latent_view = latent[:, start:end]
-            batched_views.append(latent_view)
-
-        # Stack: (num_views, B, local_dim) -> (num_views * B, local_dim)
-        batched_input = torch.cat(batched_views, dim=0)
-
-        # Create time vector for batched input: (num_views * B,)
-        batched_t = t_vec.repeat(num_views)
-
-        # Single forward pass for all views
-        batched_pred = self.model(batched_input, batched_t)
-
-        # Split predictions back: (num_views * B, local_dim) -> list of (B, local_dim)
-        preds = torch.split(batched_pred, B, dim=0)
-
-        # Distribute predictions to output tensor
+        # Iterate through views and aggregate predictions
         for id, (start, end) in enumerate(self.views):
-            value[:, start:end] += preds[id]
+            latent_view = latent[:, start:end]
+            pred = self.models[id](latent_view, t_vec)
+
+            value[:, start:end] += pred
             count[:, start:end] += 1
 
         # Average predictions in overlapping regions
@@ -378,7 +352,7 @@ class CDGS(nn.Module):
 
         # Compute smoothness scores via DDIM inversion
         final_scores = compute_inversion_scores(
-            batched_x0s, self.views, self.model, self.scheduler, self.device
+            batched_x0s, self.views, self.models, self.scheduler, self.device
         )
 
         # Rearrange batch by selecting smoothest samples

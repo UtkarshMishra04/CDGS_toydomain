@@ -51,6 +51,8 @@ for ((i=START_IDX; i<END_IDX; i++)); do
     echo "Running pair $i: pruning_start=$PRUNING_START, pruning_end=$PRUNING_END"
 
     uv run sampling_time_single.py \
+        --batch-size 1000 \
+        --num-samples-to-generate 100 \
         --horizon-length 10 \
         --num-resampling-steps 5 \
         --enable-pruning True \

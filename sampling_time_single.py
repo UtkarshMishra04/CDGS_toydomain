@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from data import MultiModalDataset
 from models import SimpleDiffusionModel
-from samplers import CDGS
+from samplers_single import CDGS
 import time
 import os
 import json
@@ -74,9 +74,10 @@ def main(args):
 
     start = time.monotonic()
     samples = sampler.sample(
-        batch_size=args.num_samples_to_generate,
+        batch_size=args.batch_size,
         num_inference_steps=args.num_inference_steps,
     )
+    samples = samples[: args.num_samples_to_generate]
     time_taken = time.monotonic() - start
     print(f"Time taken: {time_taken} seconds")
     valid_paths, _ = MultiModalDataset.evaluate_paths(
@@ -126,6 +127,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--batch-size", type=int, default=100)
     parser.add_argument("--num-samples-to-generate", type=int, default=100)
     parser.add_argument("--num-inference-steps", type=int, default=100)
     parser.add_argument("--horizon-length", type=int, default=7)
