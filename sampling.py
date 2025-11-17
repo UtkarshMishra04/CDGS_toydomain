@@ -3,6 +3,7 @@ import torch
 import numpy as np
 from data import MultiModalDataset, UniformDataset
 from models import SimpleDiffusionModel
+from samplers import CDGS
 import time
 import os
 import json
@@ -83,12 +84,6 @@ def build_uniform_datasets(num_samples: int, seed: int):
 
 
 def main(args):
-    # Import the appropriate sampler based on training mode
-    if args.training_mode == "separate":
-        from samplers import CDGS
-    else:  # unified
-        from samplers_single import CDGS
-
     # Build datasets based on type
     num_samples = 1000
     seed = 42
