@@ -4,7 +4,7 @@ from tqdm import tqdm
 from diffusers import DDPMScheduler
 from utils import load_models
 from diffusers.utils.torch_utils import randn_tensor
-from models import SimpleDiffusionModel, FlowMatchingModel
+from models import SimpleDiffusionModel
 
 
 # =============================================================================
@@ -329,7 +329,9 @@ class CDGS(nn.Module):
         # Print configuration
         print("CDGS initialized:")
         print(f"  Model type: {self.model_type}")
-        print(f"  Model mode: {'single (batched inference)' if self.use_single_model else 'separate (per-model inference)'}")
+        print(
+            f"  Model mode: {'single (batched inference)' if self.use_single_model else 'separate (per-model inference)'}"
+        )
         print(f"  Number of views: {self.num_models}")
         print(f"  Views: {self.views}")
         print(f"  Latent dimension: {self.latent_dim}")

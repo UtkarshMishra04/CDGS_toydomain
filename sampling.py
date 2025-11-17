@@ -7,6 +7,7 @@ from samplers import CDGS
 import time
 import os
 import json
+from utils import seed_everything
 
 # Configure device between CUDA, MPS, and CPU
 device = torch.device(
@@ -17,6 +18,8 @@ device = torch.device(
     else "cpu"
 )
 print(f"Using device: {device}")
+
+seed_everything(42)
 
 
 def build_multimodal_datasets(num_samples: int, seed: int):
@@ -218,7 +221,11 @@ if __name__ == "__main__":
     parser.add_argument("--num-samples-to-generate", type=int, default=100)
     parser.add_argument("--num-inference-steps", type=int, default=100)
 
-    parser.add_argument("--enable-pruning", type=bool, default=True)
+    parser.add_argument(
+        "--disable-pruning",
+        action="store_true",
+        help="Disable pruning (pruning is enabled by default)",
+    )
     parser.add_argument("--pruning-start", type=float, default=0.0)
     parser.add_argument("--pruning-end", type=float, default=1.0)
     parser.add_argument("--pruning-top-K", type=float, default=0.2)
@@ -226,4 +233,8 @@ if __name__ == "__main__":
 
     parser.add_argument("--output-directory", type=str, default="./profile")
     args = parser.parse_args()
+
+    # Convert disable_pruning to enable_pruning for backward compatibility
+    args.enable_pruning = not args.disable_pruning
+
     main(args)
