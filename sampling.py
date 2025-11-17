@@ -3,7 +3,6 @@ import torch
 import numpy as np
 from data import MultiModalDataset, UniformDataset
 from models import SimpleDiffusionModel
-from samplers_single import CDGS
 import time
 import os
 import json
@@ -84,21 +83,40 @@ def build_uniform_datasets(num_samples: int, seed: int):
 
 
 def main(args):
+    # Import the appropriate sampler based on training mode
+    if args.training_mode == "separate":
+        from samplers import CDGS
+    else:  # unified
+        from samplers_single import CDGS
+
     # Build datasets based on type
     num_samples = 1000
     seed = 42
 
     if args.dataset == "multimodal":
-        start_dataset, bridge_dataset, end_dataset = build_multimodal_datasets(num_samples, seed)
+        start_dataset, bridge_dataset, end_dataset = build_multimodal_datasets(
+            num_samples, seed
+        )
     else:  # uniform
-        start_dataset, bridge_dataset, end_dataset = build_uniform_datasets(num_samples, seed)
+        start_dataset, bridge_dataset, end_dataset = build_uniform_datasets(
+            num_samples, seed
+        )
 
-    # Build model paths based on dataset type (single unified model)
-    diffusion_model_paths = {
-        "start": f"./checkpoints/{args.dataset}_diffusion_model.pth",
-        "bridge": f"./checkpoints/{args.dataset}_diffusion_model.pth",
-        "end": f"./checkpoints/{args.dataset}_diffusion_model.pth",
-    }
+    # Build model paths based on dataset type and training mode
+    if args.training_mode == "separate":
+        # Separate models for start, bridge, end
+        diffusion_model_paths = {
+            "start": f"./checkpoints/{args.dataset}_start_model.pth",
+            "bridge": f"./checkpoints/{args.dataset}_bridge_model.pth",
+            "end": f"./checkpoints/{args.dataset}_end_model.pth",
+        }
+    else:  # unified
+        # Single unified model for all components
+        diffusion_model_paths = {
+            "start": f"./checkpoints/{args.dataset}_diffusion_model.pth",
+            "bridge": f"./checkpoints/{args.dataset}_diffusion_model.pth",
+            "end": f"./checkpoints/{args.dataset}_diffusion_model.pth",
+        }
 
     num_bridges = args.horizon_length - 2
     sampler = CDGS(
@@ -135,7 +153,6 @@ def main(args):
             samples.cpu().numpy(),
         )
     print(f"Success Rate: {np.mean(valid_paths)}")
-    # print(f"Step validities: {np.mean(step_validities)}")
 
     # Use the appropriate plotting method based on dataset type
     if args.dataset == "multimodal":
@@ -170,6 +187,7 @@ def main(args):
             {
                 "time": time_taken,
                 "dataset": args.dataset,
+                "training_mode": args.training_mode,
                 "horizon_length": args.horizon_length,
                 "success_rate": np.mean(valid_paths),
                 "samples_shape": samples.shape,
@@ -185,18 +203,25 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Unified CDGS sampling script")
     parser.add_argument(
         "--dataset",
         type=str,
         choices=["multimodal", "uniform"],
         default="multimodal",
-        help="Dataset type: 'multimodal' for Gaussian distributions, 'uniform' for uniform distributions"
+        help="Dataset type: 'multimodal' for Gaussian distributions, 'uniform' for uniform distributions",
+    )
+    parser.add_argument(
+        "--training-mode",
+        type=str,
+        choices=["separate", "unified"],
+        default="separate",
+        help="Training mode: 'separate' for individually trained models, 'unified' for single model",
     )
     parser.add_argument("--batch-size", type=int, default=100)
+    parser.add_argument("--horizon-length", type=int, default=10)
     parser.add_argument("--num-samples-to-generate", type=int, default=100)
     parser.add_argument("--num-inference-steps", type=int, default=100)
-    parser.add_argument("--horizon-length", type=int, default=7)
 
     parser.add_argument("--enable-pruning", type=bool, default=True)
     parser.add_argument("--pruning-start", type=float, default=0.0)
