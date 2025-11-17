@@ -637,6 +637,550 @@ class MultiModalDataset(Dataset):
         return valid_count / total_count
 
 
+class UniformDataset(Dataset):
+    """A lightweight multimodal synthetic dataset with uniform distributions.
+
+    Args:
+        num_samples: Number of samples to generate
+        start_ranges: List of (low, high) tuples for start modes
+        end_ranges: List of (low, high) tuples for end modes
+        transition_matrix: Transition matrix to restrict which combinations of modes are valid
+        seed: Random seed
+    """
+
+    def __init__(
+        self,
+        num_samples: int,
+        start_ranges: List[Tuple[float, float]],
+        end_ranges: List[Tuple[float, float]],
+        transition_matrix: Optional[np.ndarray] = None,
+        seed: Optional[int] = None,
+    ) -> None:
+        # Validate parameters
+        self._validate_parameters(start_ranges, end_ranges)
+
+        # Store basic parameters
+        self.start_ranges: List[Tuple[float, float]] = start_ranges
+        self.end_ranges: List[Tuple[float, float]] = end_ranges
+        self.num_modes_x1: int = len(start_ranges)
+        self.num_modes_x2: int = len(end_ranges)
+        self.num_samples: int = num_samples
+        self.rng: np.random.Generator = np.random.default_rng(seed)
+
+        # Setup transition matrix and probabilities
+        self.transition_matrix = self._setup_transition_matrix(transition_matrix)
+        self.transition_probabilities = self._setup_transition_probabilities()
+
+        # Initialize data arrays
+        self.data: np.ndarray
+        self.start_labels: np.ndarray
+        self.end_labels: np.ndarray
+
+        self._generate_data(num_samples)
+
+    def _validate_parameters(
+        self,
+        start_ranges: List[Tuple[float, float]],
+        end_ranges: List[Tuple[float, float]],
+    ) -> None:
+        """Validate that ranges are proper tuples with low < high."""
+        for i, (low, high) in enumerate(start_ranges):
+            if low >= high:
+                raise ValueError(f"start_ranges[{i}]: low ({low}) must be < high ({high})")
+        for i, (low, high) in enumerate(end_ranges):
+            if low >= high:
+                raise ValueError(f"end_ranges[{i}]: low ({low}) must be < high ({high})")
+
+    def _setup_transition_matrix(
+        self, transition_matrix: Optional[np.ndarray]
+    ) -> np.ndarray:
+        """Setup and validate the transition matrix."""
+        if transition_matrix is None:
+            matrix = np.ones((self.num_modes_x1, self.num_modes_x2), dtype=bool)
+        else:
+            matrix = transition_matrix
+
+        # Validate transition matrix
+        expected_shape = (self.num_modes_x1, self.num_modes_x2)
+        if matrix.shape != expected_shape:
+            raise ValueError(
+                f"Transition matrix shape {matrix.shape} doesn't match expected shape {expected_shape}"
+            )
+        if matrix.dtype != bool:
+            raise ValueError("Transition matrix must be a boolean array")
+
+        return matrix
+
+    def _setup_transition_probabilities(self) -> np.ndarray:
+        """Setup transition probabilities from the transition matrix.
+
+        NOTE: Assumes all starting modes are equally likely, and all transitions
+        from a starting mode are equally likely.
+        """
+        # Create transition probabilities: equal probability for each start mode,
+        # then equal probability for valid transitions
+        probabilities = self.transition_matrix.astype(float) / np.sum(
+            self.transition_matrix, axis=1, keepdims=True
+        )
+        # Weight by equal probability for each start mode
+        return probabilities / self.num_modes_x1
+
+    def _generate_data(self, num_samples: int) -> None:
+        flat_indices = self.rng.choice(
+            np.arange(self.transition_probabilities.size),
+            size=num_samples,
+            p=self.transition_probabilities.ravel(),
+        )
+
+        unraveled_indices = np.unravel_index(flat_indices, self.transition_matrix.shape)
+        self.start_labels, self.end_labels = unraveled_indices
+
+        # Sample uniformly from ranges
+        x1 = np.array([
+            self.rng.uniform(self.start_ranges[label][0], self.start_ranges[label][1])
+            for label in self.start_labels
+        ])
+        x2 = np.array([
+            self.rng.uniform(self.end_ranges[label][0], self.end_ranges[label][1])
+            for label in self.end_labels
+        ])
+
+        self.data = np.column_stack([x1, x2])
+
+    def __len__(self) -> int:
+        return self.num_samples
+
+    def __getitem__(self, idx: int) -> torch.Tensor:
+        # Returns data as `(x1, x2)` points with labels `(mode_idx_x1, mode_idx_x2)`
+        return torch.tensor(self.data[idx], dtype=torch.float32)
+
+    def _plot_distributions(
+        self,
+        ax: plt.Axes,
+        x_pos: float,
+        ranges: List[Tuple[float, float]],
+        label_prefix: str,
+        color_offset: int = 0,
+    ) -> None:
+        """Plot uniform distributions as rectangles at a given x position."""
+        for i, (low, high) in enumerate(ranges):
+            # Draw a rectangle to represent the uniform distribution
+            width = 0.3  # Visual width of the rectangle
+            ax.fill_betweenx(
+                [low, high],
+                x_pos,
+                x_pos + width,
+                alpha=0.3,
+                color=f"C{i + color_offset}",
+                label=f"{label_prefix} Mode {i}",
+            )
+
+    def plot_transitions(
+        self,
+        samples: Optional[np.ndarray] = None,
+        title: Optional[str] = None,
+        annotate_valid: bool = False,
+        n: int = 25,
+    ) -> plt.Figure:
+        """Plot the dataset transitions with Start/End on x-axis and values on y-axis.
+
+        Args:
+            samples: Optional external samples to plot (e.g., from diffusion model). If None, uses dataset samples.
+            title: Optional plot title
+            annotate_valid: Whether to color-code transitions as green (valid) or red (invalid)
+            n: Number of samples to plot (default: 25)
+        """
+        fig, ax = plt.subplots(figsize=(12, 8))
+
+        # Calculate y-range for distributions
+        y_range = (self.data.min() - 0.5, self.data.max() + 0.5)
+
+        # Plot distributions using helper method
+        self._plot_distributions(ax, 0, self.start_ranges, "Start")
+        self._plot_distributions(ax, 1, self.end_ranges, "End", len(self.start_ranges))
+
+        # Plot data points and connections
+        if samples is None:
+            self._plot_dataset_samples(ax, n, annotate_valid)
+        else:
+            self._plot_external_samples(ax, samples, n, annotate_valid)
+
+        # Format
+        ax.set_xticks([0, 1])
+        ax.set_xticklabels(["Start", "End"], fontsize=14)
+        ax.set_ylabel("Value", fontsize=14)
+        ax.grid(True, alpha=0.3)
+        if title:
+            ax.set_title(title, fontsize=16)
+        ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+        plt.tight_layout()
+        return fig
+
+    def _plot_dataset_samples(
+        self, ax: plt.Axes, n: int, annotate_valid: bool
+    ) -> None:
+        """Plot dataset samples with mode labels and transitions."""
+        colors = cm.get_cmap("tab20")(
+            np.linspace(0, 1, len(np.where(self.transition_matrix)[0]))
+        )
+
+        for i, (mode_x1, mode_x2) in enumerate(zip(*np.where(self.transition_matrix))):
+            mask = (self.start_labels == mode_x1) & (self.end_labels == mode_x2)
+            if not np.any(mask):
+                continue
+
+            # Limit to first n samples for this transition
+            indices = np.where(mask)[0][:n]
+            start_vals, end_vals = self.data[indices][:, 0], self.data[indices][:, 1]
+
+            # Scatter points
+            ax.scatter(
+                [0] * len(start_vals),
+                start_vals,
+                c=[colors[i]],
+                alpha=0.6,
+                s=20,
+                label=f"Transition ({mode_x1}→{mode_x2})",
+            )
+            ax.scatter([1] * len(end_vals), end_vals, c=[colors[i]], alpha=0.6, s=20)
+
+            # Connection lines
+            for start_val, end_val in zip(start_vals, end_vals):
+                if annotate_valid:
+                    is_valid = self._is_valid(start_val, end_val, mode_x1, mode_x2)
+                    color = "green" if is_valid else "red"
+                    ax.plot(
+                        [0, 1],
+                        [start_val, end_val],
+                        color=color,
+                        alpha=0.8,
+                        linewidth=1.2,
+                    )
+                else:
+                    ax.plot(
+                        [0, 1],
+                        [start_val, end_val],
+                        color=colors[i],
+                        alpha=0.3,
+                        linewidth=0.8,
+                    )
+
+    def _plot_external_samples(
+        self,
+        ax: plt.Axes,
+        samples: np.ndarray,
+        n: int,
+        annotate_valid: bool,
+    ) -> None:
+        """Plot external samples without mode labels."""
+        samples_to_plot = samples[:n]  # Limit to first n samples
+        start_vals, end_vals = samples_to_plot[:, 0], samples_to_plot[:, 1]
+
+        # Scatter points
+        ax.scatter(
+            [0] * len(start_vals),
+            start_vals,
+            alpha=0.6,
+            s=20,
+            color="blue",
+            label="Start samples",
+        )
+        ax.scatter(
+            [1] * len(end_vals),
+            end_vals,
+            alpha=0.6,
+            s=20,
+            color="red",
+            label="End samples",
+        )
+
+        # Connection lines
+        for start_val, end_val in zip(start_vals, end_vals):
+            if annotate_valid:
+                # Check if sample is valid for any allowed transition
+                is_valid = False
+                for mode_x1, mode_x2 in zip(*np.where(self.transition_matrix)):
+                    if self._is_valid(start_val, end_val, mode_x1, mode_x2):
+                        is_valid = True
+                        break
+                color = "green" if is_valid else "red"
+                ax.plot(
+                    [0, 1], [start_val, end_val], color=color, alpha=0.8, linewidth=1.2
+                )
+            else:
+                ax.plot(
+                    [0, 1], [start_val, end_val], color="gray", alpha=0.3, linewidth=0.8
+                )
+
+    def _is_valid(
+        self,
+        start_val: float,
+        end_val: float,
+        start_mode: int,
+        end_mode: int,
+    ) -> bool:
+        """Check if a transition is within expected ranges."""
+        start_low, start_high = self.start_ranges[start_mode]
+        end_low, end_high = self.end_ranges[end_mode]
+        start_valid = start_low <= start_val <= start_high
+        end_valid = end_low <= end_val <= end_high
+        return start_valid and end_valid
+
+    def compute_accuracy(self, samples: np.ndarray) -> float:
+        """Compute accuracy of samples against theoretical distributions.
+
+        Args:
+            samples: Array of shape (N, 2) with start and end values
+
+        Returns:
+            float: Fraction of samples that are within the expected ranges
+        """
+        if samples.shape[1] != 2:
+            raise ValueError("Samples must have shape (N, 2)")
+
+        valid_count = 0
+        total_count = len(samples)
+
+        for start_val, end_val in samples:
+            # Check if sample is valid for any allowed transition
+            is_sample_valid = False
+
+            for mode_x1, mode_x2 in zip(*np.where(self.transition_matrix)):
+                if self._is_valid(start_val, end_val, mode_x1, mode_x2):
+                    is_sample_valid = True
+                    break
+
+            if is_sample_valid:
+                valid_count += 1
+
+        return valid_count / total_count
+
+    @staticmethod
+    def _validate_full_path(
+        path: np.ndarray, datasets: List["UniformDataset"]
+    ) -> Tuple[bool, List[bool]]:
+        """Validate an entire multi-step path.
+
+        Args:
+            path: Array of shape (n_steps,) representing values at each step
+            datasets: List of datasets, where datasets[i] represents transition from step i to i+1
+
+        Returns:
+            Tuple of (is_fully_valid, step_validities) where step_validities[i] indicates
+            if transition from step i to i+1 is valid
+        """
+        if len(path) != len(datasets) + 1:
+            raise ValueError(
+                f"Path length {len(path)} should be {len(datasets) + 1} for {len(datasets)} datasets"
+            )
+
+        step_validities = []
+
+        for i in range(len(datasets)):
+            # Check if this step is valid for any allowed transition in the dataset
+            is_step_valid = False
+
+            # Check if this step is valid for any allowed transition
+            for mode_x1, mode_x2 in zip(*np.where(datasets[i].transition_matrix)):
+                start_low, start_high = datasets[i].start_ranges[mode_x1]
+                end_low, end_high = datasets[i].end_ranges[mode_x2]
+
+                start_valid = start_low <= path[i] <= start_high
+                end_valid = end_low <= path[i + 1] <= end_high
+
+                if start_valid and end_valid:
+                    is_step_valid = True
+                    break
+
+            step_validities.append(is_step_valid)
+
+        is_fully_valid = all(step_validities)
+        return is_fully_valid, step_validities
+
+    @staticmethod
+    def evaluate_paths(
+        datasets: List["UniformDataset"],
+        paths: List[np.ndarray],
+    ) -> Tuple[List[bool], List[List[bool]]]:
+        """Evaluate a list of paths against the dataset.
+
+        Args:
+            datasets: List of datasets to validate against
+            paths: List of paths to evaluate
+
+        Returns:
+            Tuple of (path_validities, step_validities) where path_validities[i] indicates
+            if paths[i] is fully valid, and step_validities[i] contains the validity of each step
+        """
+        results = [
+            UniformDataset._validate_full_path(path, datasets)
+            for path in paths
+        ]
+        return [result[0] for result in results], [result[1] for result in results]
+
+    @staticmethod
+    def _plot_distributions_static(
+        ax: plt.Axes,
+        x_pos: float,
+        ranges: List[Tuple[float, float]],
+        label_prefix: str,
+        color_offset: int = 0,
+    ) -> None:
+        """Static version of _plot_distributions for uniform datasets."""
+        for i, (low, high) in enumerate(ranges):
+            # Draw a rectangle to represent the uniform distribution
+            width = 0.3  # Visual width of the rectangle
+            ax.fill_betweenx(
+                [low, high],
+                x_pos,
+                x_pos + width,
+                alpha=0.3,
+                color=f"C{i + color_offset}",
+                label=f"{label_prefix} Mode {i}",
+            )
+
+    @staticmethod
+    def plot_multi_step_transitions(
+        datasets: List["UniformDataset"],
+        samples: np.ndarray,
+        title: Optional[str] = None,
+        annotate_valid: bool = True,
+        n: int = 25,
+    ) -> plt.Figure:
+        """Plot multi-step transitions across multiple uniform datasets.
+
+        Args:
+            datasets: List of UniformDataset objects, one for each transition step
+            samples: Array of shape (N, n_steps) where n_steps = len(datasets) + 1
+            title: Optional plot title
+            annotate_valid: Whether to color-code transitions (green=fully valid, gray+red=partially valid)
+            n: Number of samples to plot (default: 25)
+
+        Returns:
+            matplotlib Figure object
+        """
+        if len(datasets) == 0:
+            raise ValueError("At least one dataset must be provided")
+
+        n_steps = len(datasets) + 1
+        if samples.shape[1] != n_steps:
+            raise ValueError(
+                f"Samples should have {n_steps} columns for {len(datasets)} datasets"
+            )
+
+        # Limit samples to plot
+        samples_to_plot = samples[:n]
+
+        # Create figure with appropriate width
+        fig_width = max(12, 4 * n_steps)
+        fig, ax = plt.subplots(figsize=(fig_width, 8))
+
+        # Calculate global y-range across all datasets
+        all_values = []
+        for dataset in datasets:
+            for low, high in dataset.start_ranges:
+                all_values.extend([low, high])
+            for low, high in dataset.end_ranges:
+                all_values.extend([low, high])
+
+        # Also consider sample range
+        sample_min, sample_max = samples_to_plot.min(), samples_to_plot.max()
+        range_min, range_max = min(all_values), max(all_values)
+
+        y_range = (
+            min(sample_min, range_min) - 0.5,
+            max(sample_max, range_max) + 0.5,
+        )
+
+        # Plot distributions at each step
+        x_positions = list(range(n_steps))
+
+        # First step: start distributions from first dataset
+        UniformDataset._plot_distributions_static(
+            ax, 0, datasets[0].start_ranges, "Step 0", 0
+        )
+
+        # Intermediate and final steps: end distributions from each dataset
+        for i, dataset in enumerate(datasets):
+            x_pos = i + 1
+            color_offset = (i + 1) * len(dataset.end_ranges)
+            UniformDataset._plot_distributions_static(
+                ax,
+                x_pos,
+                dataset.end_ranges,
+                f"Step {x_pos}",
+                color_offset,
+            )
+
+        # Plot sample paths with validation coloring
+        for sample_idx, path in enumerate(samples_to_plot):
+            if annotate_valid:
+                # Validate the full path
+                is_fully_valid, step_validities = UniformDataset._validate_full_path(
+                    path, datasets
+                )
+
+                if is_fully_valid:
+                    # Fully valid path: green line
+                    ax.plot(x_positions, path, color="green", alpha=0.8, linewidth=1.2)
+                else:
+                    # Partially valid path: gray line with red segments for invalid transitions
+                    for i in range(len(datasets)):
+                        x_start, x_end = i, i + 1
+                        y_start, y_end = path[i], path[i + 1]
+
+                        if step_validities[i]:
+                            # Valid transition: gray
+                            ax.plot(
+                                [x_start, x_end],
+                                [y_start, y_end],
+                                color="gray",
+                                alpha=0.6,
+                                linewidth=1.0,
+                            )
+                        else:
+                            # Invalid transition: red
+                            ax.plot(
+                                [x_start, x_end],
+                                [y_start, y_end],
+                                color="red",
+                                alpha=0.8,
+                                linewidth=1.2,
+                            )
+            else:
+                # No validation: simple gray lines
+                ax.plot(x_positions, path, color="gray", alpha=0.3, linewidth=0.8)
+
+            # Scatter points at each step
+            ax.scatter(x_positions, path, alpha=0.6, s=20, color="blue")
+
+        # Format plot
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels([f"Step {i}" for i in range(n_steps)], fontsize=12)
+        ax.set_ylabel("Value", fontsize=14)
+        ax.grid(True, alpha=0.3)
+
+        if title:
+            ax.set_title(title, fontsize=16)
+        else:
+            ax.set_title(f"Multi-step Transitions ({len(datasets)} steps)", fontsize=16)
+
+        # Add legend for validation colors if enabled
+        if annotate_valid:
+            from matplotlib.lines import Line2D
+
+            legend_elements = [
+                Line2D([0], [0], color="green", lw=2, label="Fully valid path"),
+                Line2D([0], [0], color="gray", lw=2, label="Valid transition"),
+                Line2D([0], [0], color="red", lw=2, label="Invalid transition"),
+            ]
+            ax.legend(handles=legend_elements, loc="upper right")
+
+        ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+        plt.tight_layout()
+        return fig
+
+
 if __name__ == "__main__":
     # Example usage
     transition_matrix = np.array(
