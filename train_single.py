@@ -18,6 +18,74 @@ from models import SimpleDiffusionModel
 from utils import seed_everything
 
 
+def is_valid_transition(sample, dataset):
+    """Check if a 2D sample (x1, x2) is a valid transition for the dataset.
+
+    Args:
+        sample: A numpy array of shape (2,) representing (x1, x2)
+        dataset: Either a MultiModalDataset or UniformDataset
+
+    Returns:
+        bool: True if the sample is a valid transition according to the dataset
+    """
+    x1, x2 = sample
+
+    if isinstance(dataset, MultiModalDataset):
+        # Check all possible mode transitions
+        for start_mode, end_mode in zip(*np.where(dataset.transition_matrix)):
+            # Check if x1 is plausible from start_mode (using 3-sigma rule)
+            start_mean = dataset.start_means[start_mode]
+            start_std = dataset.start_stds[start_mode]
+            start_valid = abs(x1 - start_mean) <= 3 * start_std
+
+            # Check if x2 is plausible from end_mode
+            end_mean = dataset.end_means[end_mode]
+            end_std = dataset.end_stds[end_mode]
+            end_valid = abs(x2 - end_mean) <= 3 * end_std
+
+            if start_valid and end_valid:
+                return True
+        return False
+
+    elif isinstance(dataset, UniformDataset):
+        # Check all possible mode transitions
+        for start_mode, end_mode in zip(*np.where(dataset.transition_matrix)):
+            # Check if x1 is in start range
+            start_low, start_high = dataset.start_ranges[start_mode]
+            start_valid = start_low <= x1 <= start_high
+
+            # Check if x2 is in end range
+            end_low, end_high = dataset.end_ranges[end_mode]
+            end_valid = end_low <= x2 <= end_high
+
+            if start_valid and end_valid:
+                return True
+        return False
+
+    return False
+
+
+def compute_accuracy_any(samples, datasets):
+    """Compute accuracy by checking if each sample is valid under ANY dataset.
+
+    Args:
+        samples: Tensor of shape (N, 2) containing N samples
+        datasets: List of datasets to check against
+
+    Returns:
+        float: Fraction of samples that are valid under at least one dataset
+    """
+    samples_np = samples.cpu().numpy()
+    valid_count = 0
+
+    for sample in samples_np:
+        # Check if sample is valid under ANY of the component datasets
+        if any(is_valid_transition(sample, ds) for ds in datasets):
+            valid_count += 1
+
+    return valid_count / len(samples_np)
+
+
 def build_multimodal_datasets(num_samples: int, seed: int) -> ConcatDataset:
     """Build the original Gaussian multimodal datasets.
 
@@ -138,11 +206,14 @@ def main():
     # Build dataset based on argument
     print(f"Building {args.dataset} datasets...")
     if args.dataset == "multimodal":
-        dataset = build_multimodal_datasets(args.num_samples, args.seed)
+        concat_dataset = build_multimodal_datasets(args.num_samples, args.seed)
     else:  # uniform
-        dataset = build_uniform_datasets(args.num_samples, args.seed)
+        concat_dataset = build_uniform_datasets(args.num_samples, args.seed)
 
-    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+    # Extract component datasets for accuracy computation
+    component_datasets = list(concat_dataset.datasets)
+
+    dataloader = DataLoader(concat_dataset, batch_size=args.batch_size, shuffle=True)
 
     # Initialize model and optimizer
     model = SimpleDiffusionModel().to(device)
@@ -162,31 +233,45 @@ def main():
     print(f"Learning rate: {args.lr}")
 
     accuracy = 0.0
+    best_loss = float('inf')
     pbar = tqdm(range(args.num_epochs), desc="Loss: 0.0")
     for epoch in pbar:
+        epoch_loss = 0.0
+        num_batches = 0
         for batch in tqdm(dataloader, total=len(dataloader), leave=False):
             optimizer.zero_grad()
             batch = batch.to(device)
-            loss = model.training_step(
-                batch, scheduler
-            )  # batch[0] contains the data points
+            loss = model.training_step(batch, scheduler)
             loss.backward()
             optimizer.step()
+            epoch_loss += loss.item()
+            num_batches += 1
 
-        # save model
+        # Calculate average loss for the epoch
+        avg_loss = epoch_loss / num_batches
+
+        # Save best model if loss improved
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            best_checkpoint_name = f"checkpoints/{args.dataset}_diffusion_model_best.pth"
+            torch.save(model.state_dict(), best_checkpoint_name)
+
+        # Save model periodically
         if (epoch % 50 == 0 and epoch > 0) or epoch == args.num_epochs - 1:
             checkpoint_name = f"checkpoints/{args.dataset}_diffusion_model.pth"
             torch.save(model.state_dict(), checkpoint_name)
 
-            # Sampling
+            # Sampling and accuracy computation
             samples = model.sample(
                 batch_size=1000,
                 noise_scheduler=scheduler,
                 device=device,
                 num_inference_steps=50,
             )
-            # accuracy = dataset.compute_accuracy(samples)
-        pbar.set_description(f"Loss: {loss.item():.4f}, Acc: {accuracy:.3f}")
+            # Compute accuracy: sample is valid if it's valid under ANY component dataset
+            accuracy = compute_accuracy_any(samples, component_datasets)
+
+        pbar.set_description(f"Loss: {avg_loss:.4f}, Best: {best_loss:.4f}, Acc: {accuracy:.3f}")
 
     print(f"Training complete! Model saved to checkpoints/{args.dataset}_diffusion_model.pth")
 

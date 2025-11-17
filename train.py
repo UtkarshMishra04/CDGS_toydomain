@@ -193,16 +193,32 @@ def main():
     print(f"Learning rate: {args.lr}")
 
     accuracy = 0.0
+    best_loss = float('inf')
     pbar = tqdm(range(args.num_epochs), desc="Loss: 0.0")
     for epoch in pbar:
+        epoch_loss = 0.0
+        num_batches = 0
         for batch in tqdm(dataloader, total=len(dataloader), leave=False):
             optimizer.zero_grad()
             batch = batch.to(device)
             loss = model.training_step(batch, scheduler)
             loss.backward()
             optimizer.step()
+            epoch_loss += loss.item()
+            num_batches += 1
 
-        # Save model
+        # Calculate average loss for the epoch
+        avg_loss = epoch_loss / num_batches
+
+        # Save best model if loss improved
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            best_checkpoint_name = (
+                f"{args.checkpoint_dir}/{args.dataset}_{args.component}_model_best.pth"
+            )
+            torch.save(model.state_dict(), best_checkpoint_name)
+
+        # Save model periodically
         if (epoch % 50 == 0 and epoch > 0) or epoch == args.num_epochs - 1:
             checkpoint_name = (
                 f"{args.checkpoint_dir}/{args.dataset}_{args.component}_model.pth"
@@ -221,7 +237,7 @@ def main():
             if hasattr(dataset, "compute_accuracy"):
                 accuracy = dataset.compute_accuracy(samples)
 
-        pbar.set_description(f"Loss: {loss.item():.4f}, Acc: {accuracy:.3f}")
+        pbar.set_description(f"Loss: {avg_loss:.4f}, Best: {best_loss:.4f}, Acc: {accuracy:.3f}")
 
     checkpoint_name = f"{args.checkpoint_dir}/{args.dataset}_{args.component}_model.pth"
     print(f"Training complete! Model saved to {checkpoint_name}")
